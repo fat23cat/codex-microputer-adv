@@ -1,0 +1,40 @@
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_FREERTOS_HZ=1000
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+
+# Reference layout only, so the app-size check validates against a realistic
+# slot instead of the 1 MB single-app default. M5Apps owns the real partition
+# table on the device and this generated one is never flashed.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-reference.csv"
+
+# BLE transport (NimBLE host, no Classic BT).
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_HID_SERVICE=y
+CONFIG_BT_NIMBLE_SVC_HID_MAX_RPTS=4
+CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="Codex Micro"
+CONFIG_BT_NIMBLE_SM_LVL=2
+CONFIG_BT_NIMBLE_SVC_DIS_MANUFACTURER_NAME=y
+CONFIG_BT_NIMBLE_SVC_DIS_SERIAL_NUMBER=y
+CONFIG_BT_NIMBLE_SVC_DIS_PNP_ID=y
+CONFIG_BT_CONTROLLER_ENABLED=y
+# Bonding is persisted by this app into apps_nvs (see ble_store_apps_nvs.cpp),
+# not by NimBLE's own store, which would need a default `nvs` partition that
+# M5Apps does not create.
+CONFIG_BT_NIMBLE_NVS_PERSIST=n
+CONFIG_BT_NIMBLE_SM_LEGACY=y
+CONFIG_BT_NIMBLE_SM_SC=y
+# Several centrals at once: a Mac that has auto-connected to the bond must not
+# lock out the bridge, and the device is meant to serve more than one host.
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_TINYUSB_HID_COUNT=1
+CONFIG_BT_NIMBLE_MAX_BONDS=8
+CONFIG_BT_NIMBLE_MAX_CCCDS=8

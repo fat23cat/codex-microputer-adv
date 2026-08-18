@@ -1,0 +1,242 @@
+diff --git a/components/esp_hid/src/nimble_hidd.c b/components/esp_hid/src/nimble_hidd.c
+index 505adcab..72a24496 100644
+--- a/components/esp_hid/src/nimble_hidd.c
++++ b/components/esp_hid/src/nimble_hidd.c
+@@ -41,6 +41,10 @@ static esp_ble_hidd_dev_t *s_dev = NULL;
+     Increment service index as the hid services get registered */
+ static int service_index = -1;
+
++static void nimble_hid_report_write(uint8_t report_type, uint8_t report_id,
++                                    const uint8_t *data, uint16_t length,
++                                    void *arg);
++
+ typedef hidd_report_item_t hidd_le_report_item_t;
+
+ typedef struct {
+@@ -69,7 +73,7 @@ struct esp_ble_hidd_dev_s {
+     struct ble_gatt_svc         hid_incl_svc;
+
+     uint16_t                    bat_level_handle;
+-    uint8_t                     pnp[7]; /* something related to device info service */
++    uint8_t                     pnp[8]; /* binary PnP payload plus string terminator */
+     hidd_dev_map_t             *devices;
+     uint8_t                     devices_len;
+ };
+@@ -143,13 +147,14 @@ static int ble_hid_create_info_db(void)
+
+     rc = 0;
+     ble_svc_dis_init();
+-    uint8_t pnp_val[7] = {
+-        0x02, //0x1=BT, 0x2=USB
+-        s_dev->config.vendor_id & 0xFF, (s_dev->config.vendor_id >> 8) & 0xFF, //VID
+-                     s_dev->config.product_id & 0xFF, (s_dev->config.product_id >> 8) & 0xFF, //PID
+-                     s_dev->config.version & 0xFF, (s_dev->config.version >> 8) & 0xFF  //VERSION
++    /* The DIS service prepends the vendor-id source byte. */
++    uint8_t pnp_val[6] = {
++        s_dev->config.vendor_id & 0xFF, (s_dev->config.vendor_id >> 8) & 0xFF,
++        s_dev->config.product_id & 0xFF, (s_dev->config.product_id >> 8) & 0xFF,
++        s_dev->config.version & 0xFF, (s_dev->config.version >> 8) & 0xFF
+     };
+-    memcpy(s_dev->pnp, pnp_val, 7);
++    memcpy(s_dev->pnp, pnp_val, sizeof(pnp_val));
++    s_dev->pnp[sizeof(pnp_val)] = '\0';
+     ble_svc_dis_pnp_id_set((char *)s_dev->pnp);
+     if (s_dev->config.manufacturer_name && s_dev->config.manufacturer_name[0]) {
+         rc = ble_svc_dis_manufacturer_name_set(s_dev->config.manufacturer_name);
+@@ -169,6 +174,7 @@ static int nimble_hid_start_gatts(void)
+     ble_svc_sps_init(0, 0); // initialize with 0
+     ble_svc_bas_init();
+     ble_hid_create_info_db();
++    ble_svc_hid_report_write_cb_set(nimble_hid_report_write, s_dev);
+
+     for (uint8_t d = 0; d < s_dev->devices_len; d++) {
+         rc = create_hid_db(d);
+@@ -184,6 +190,7 @@ static int nimble_hid_start_gatts(void)
+
+ static int nimble_hid_stop_gatts(esp_ble_hidd_dev_t *dev)
+ {
++    ble_svc_hid_report_write_cb_set(NULL, NULL);
+     int rc = ESP_OK;
+
+     /* stop gatt database */
+@@ -255,7 +262,12 @@ static int ble_hid_init_config(esp_ble_hidd_dev_t *dev, const esp_hid_device_con
+             for (uint8_t r = 0; r < rmap->reports_len; r++) {
+                 dev->devices[d].reports[r].map_index = d;
+                 dev->devices[d].reports[r].report_id = rmap->reports[r].report_id;
+-                dev->devices[d].reports[r].protocol_mode = rmap->reports[r].protocol_mode;
++                /* Codex Micro exposes report-id 1 as a normal Report
++                 * characteristic, not as the HOGP boot-keyboard endpoint.
++                 * The generic parser classifies the keyboard collection as
++                 * boot mode and consequently omits its Report Reference,
++                 * which macOS rejects as an incomplete HID map. */
++                dev->devices[d].reports[r].protocol_mode = ESP_HID_PROTOCOL_MODE_REPORT;
+                 dev->devices[d].reports[r].report_type = rmap->reports[r].report_type;
+                 dev->devices[d].reports[r].usage = rmap->reports[r].usage;
+                 dev->devices[d].reports[r].value_len = rmap->reports[r].value_len;
+@@ -348,6 +360,49 @@ static hidd_le_report_item_t* find_report(uint8_t id, uint8_t type, uint8_t *mod
+     }
+     return NULL;
+ }
++
++static void nimble_hid_report_write(uint8_t report_type, uint8_t report_id,
++                                    const uint8_t *data, uint16_t length,
++                                    void *arg)
++{
++    esp_ble_hidd_dev_t *dev = (esp_ble_hidd_dev_t *)arg;
++    uint8_t mode = ESP_HID_PROTOCOL_MODE_REPORT;
++    hidd_le_report_item_t *report = find_report(report_id, report_type, &mode);
++    if (dev == NULL || report == NULL || data == NULL || length == 0) {
++        return;
++    }
++
++    const size_t event_size = sizeof(esp_hidd_event_data_t) + length;
++    esp_hidd_event_data_t *event = (esp_hidd_event_data_t *)calloc(1, event_size);
++    if (event == NULL) {
++        ESP_LOGE(TAG, "output report event allocation failed");
++        return;
++    }
++    memcpy((uint8_t *)event + sizeof(esp_hidd_event_data_t), data, length);
++
++    if (report_type == ESP_HID_REPORT_TYPE_OUTPUT) {
++        event->output.dev = dev->dev;
++        event->output.report_id = report_id;
++        event->output.usage = report->usage;
++        event->output.length = length;
++        event->output.data = (uint8_t *)data;
++        event->output.map_index = report->map_index;
++        esp_event_post_to(dev->event_loop_handle, ESP_HIDD_EVENTS,
++                          ESP_HIDD_OUTPUT_EVENT, event, event_size,
++                          portMAX_DELAY);
++    } else if (report_type == ESP_HID_REPORT_TYPE_FEATURE) {
++        event->feature.dev = dev->dev;
++        event->feature.report_id = report_id;
++        event->feature.usage = report->usage;
++        event->feature.length = length;
++        event->feature.data = (uint8_t *)data;
++        event->feature.map_index = report->map_index;
++        esp_event_post_to(dev->event_loop_handle, ESP_HIDD_EVENTS,
++                          ESP_HIDD_FEATURE_EVENT, event, event_size,
++                          portMAX_DELAY);
++    }
++    free(event);
++}
+ static hidd_le_report_item_t* find_report_by_usage_and_type(uint8_t usage, uint8_t type, uint8_t *mode)
+ {
+     hidd_le_report_item_t *rpt;
+diff --git a/examples/bluetooth/esp_hid_device/main/esp_hid_gap.c b/examples/bluetooth/esp_hid_device/main/esp_hid_gap.c
+index fcc92707..6d7c0ffc 100644
+--- a/examples/bluetooth/esp_hid_device/main/esp_hid_gap.c
++++ b/examples/bluetooth/esp_hid_device/main/esp_hid_gap.c
+@@ -769,7 +769,7 @@ esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
+     fields.flags = BLE_HS_ADV_F_DISC_GEN |
+                    BLE_HS_ADV_F_BREDR_UNSUP;
+
+-    fields.appearance = ESP_HID_APPEARANCE_GENERIC;
++    fields.appearance = appearance;
+     fields.appearance_is_present = 1;
+
+     /* Indicate that the TX power level field should be included; have the
+@@ -816,6 +816,11 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
+         ESP_LOGI(TAG, "connection %s; status=%d",
+                 event->connect.status == 0 ? "established" : "failed",
+                 event->connect.status);
++        if (event->connect.status == 0) {
++            rc = ble_gap_security_initiate(event->connect.conn_handle);
++            ESP_LOGI(TAG, "security initiate; conn_handle=%d rc=%d",
++                     event->connect.conn_handle, rc);
++        }
+         return 0;
+         break;
+     case BLE_GAP_EVENT_DISCONNECT:
+@@ -926,8 +931,8 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
+ {
+     int rc;
+     struct ble_gap_adv_params adv_params;
+-    /* maximum possible duration for hid device(180s) */
+-    int32_t adv_duration_ms = 180000;
++    /* A companion must remain connectable after USB unplug, sleep and reboot. */
++    int32_t adv_duration_ms = BLE_HS_FOREVER;
+
+     rc = ble_gap_adv_set_fields(&fields);
+     if (rc != 0) {
+@@ -940,7 +945,7 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
+     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+     adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(30);/* Recommended interval 30ms to 50ms */
+     adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(50);
+-    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, adv_duration_ms,
++    rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, adv_duration_ms,
+                            &adv_params, nimble_hid_gap_event, NULL);
+     if (rc != 0) {
+         MODLOG_DFLT(ERROR, "error enabling advertisement; rc=%d\n", rc);
+
+diff --git a/components/bt/host/nimble/nimble/nimble/host/services/hid/include/services/hid/ble_svc_hid.h b/components/bt/host/nimble/nimble/nimble/host/services/hid/include/services/hid/ble_svc_hid.h
+index c0d11cc..877a0f0 100644
+--- a/components/bt/host/nimble/nimble/nimble/host/services/hid/include/services/hid/ble_svc_hid.h
++++ b/components/bt/host/nimble/nimble/nimble/host/services/hid/include/services/hid/ble_svc_hid.h
+@@ -110,10 +110,17 @@ struct ble_svc_hid_params{
+     uint16_t ctrl_pt_handle;
+ };
+
++typedef void (*ble_svc_hid_report_write_cb_t)(uint8_t report_type,
++                                               uint8_t report_id,
++                                               const uint8_t *data,
++                                               uint16_t length,
++                                               void *arg);
++
+ void ble_svc_hid_init(void);
+ void ble_svc_hid_deinit(void);
+ int ble_svc_hid_add(struct ble_svc_hid_params params);
+ void ble_svc_hid_reset(void);
++void ble_svc_hid_report_write_cb_set(ble_svc_hid_report_write_cb_t cb, void *arg);
+
+ #ifdef __cplusplus
+ }
+diff --git a/components/bt/host/nimble/nimble/nimble/host/services/hid/src/ble_svc_hid.c b/components/bt/host/nimble/nimble/nimble/host/services/hid/src/ble_svc_hid.c
+index 863fbd0..86aa106 100644
+--- a/components/bt/host/nimble/nimble/nimble/host/services/hid/src/ble_svc_hid.c
++++ b/components/bt/host/nimble/nimble/nimble/host/services/hid/src/ble_svc_hid.c
+@@ -29,6 +29,16 @@
+ #include "host/ble_hs.h"
+ #include "host/ble_gap.h"
+ #include "services/hid/ble_svc_hid.h"
++
++static ble_svc_hid_report_write_cb_t report_write_cb;
++static void *report_write_cb_arg;
++
++void
++ble_svc_hid_report_write_cb_set(ble_svc_hid_report_write_cb_t cb, void *arg)
++{
++    report_write_cb = cb;
++    report_write_cb_arg = arg;
++}
+ #if MYNEWT_VAL(BLE_STATIC_TO_DYNAMIC)
+ #include "esp_nimble_mem.h"
+ #endif
+@@ -612,18 +622,25 @@ ble_svc_hid_access(uint16_t conn_handle, uint16_t attr_handle,
+             return 0;
+         case BLE_SVC_HID_CHR_UUID16_RPT:
+             /* this will work without any check of instance */
+-            rpt = find_rpt_by_handle(*(ctxt->chr->val_handle));
++            rpt = find_rpt_by_handle(attr_handle);
++            if (rpt == NULL) {
++                return BLE_ATT_ERR_INVALID_HANDLE;
++            }
+             assert(ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR || ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR);
+             if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+                 rc = os_mbuf_append(ctxt->om, rpt->data,
+                                     rpt->len);
+                 return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+             } else if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+-                rc = ble_svc_hid_chr_write(ctxt->om, 0, RPT_MAX_LEN, &(rpt->data), &out_rpt_len);
++                rc = ble_svc_hid_chr_write(ctxt->om, 0, RPT_MAX_LEN, rpt->data, &out_rpt_len);
+                 if (rc != 0) {
+                     return BLE_ATT_ERR_INSUFFICIENT_RES;
+                 }
+                 rpt->len = out_rpt_len;
++                if (report_write_cb != NULL) {
++                    report_write_cb(rpt->type, rpt->id, rpt->data,
++                                    out_rpt_len, report_write_cb_arg);
++                }
+                 if (ctxt->chr->flags & BLE_GATT_CHR_F_NOTIFY) {
+                     ble_gatts_chr_updated(*(ctxt->chr->val_handle));
+                 }

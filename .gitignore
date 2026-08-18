@@ -1,0 +1,64 @@
+# ESP-IDF / CMake build output
+/build/
+/dist/
+/sdkconfig.old
+/managed_components/
+/.deps/
+
+# Physical-device dumps and local recovery images
+/backups/
+*.bin
+*.elf
+*.map
+*.uf2
+*.hex
+
+# Runtime and diagnostic output
+*.log
+*.log.*
+*.trace
+*.dump
+core
+core.*
+
+# Machine-specific launch agents and local configuration
+/tools/*.plist
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.jks
+id_rsa*
+id_ed25519*
+credentials*.json
+secrets.*
+*.local
+*.local.*
+
+# Python / Node local state
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+node_modules/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+.codex/
+*.swp
+*.swo
+*~
+
+# Temporary files
+.cache/
+.tmp/
+tmp/
+*.tmp
+*.bak
