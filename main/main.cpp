@@ -36,80 +36,173 @@
 #include "theme.h"
 #include "ui.h"
 
-namespace model { State state; }
+namespace model {
+State state;
+}
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.4.1";
+constexpr char kFirmwareVersion[] = "0.4.2";
 
-// Task list staged by TASK lines and swapped in atomically on TASKS.
 model::Task staged[model::kMaxTasks];
-int         staged_count = 0;
-
-// Two-step confirmation for handing the device back to M5Apps.
+bool staged_present[model::kMaxTasks] = {};
+int staged_count = 0;
+uint32_t staged_started_ms = 0;
+constexpr uint32_t kStagedBatchTimeoutMs = 2000;
 bool exit_armed = false;
-
-// True only after G0 successfully started Codex Micro push-to-talk. A wake-only
-// press never arms it, so releasing the button cannot trigger voice by accident.
-bool voice_button_active = false;
-
-// Keyboard arrows emulate a short planar-stick deflection. A separate timed
-// centre report is essential: without it the host would keep the virtual stick
-// held after a key that has no continuous analogue position.
+struct VoiceGesture {
+    bool active = false;
+    bool agent_key_down = false;
+    int agent = -1;
+    codex_micro::Transport transport = codex_micro::Transport::None;
+};
+VoiceGesture voice_gesture;
+codex_micro::Transport agent_key_transport[model::kMaxTasks] = {};
+codex_micro::Transport native_action_transport[13] = {};
+codex_micro::Transport encoder_press_transport = codex_micro::Transport::None;
 uint32_t joystick_release_ms = 0;
 bool joystick_deflected = false;
+codex_micro::Transport joystick_transport = codex_micro::Transport::None;
 
 using keys::Key;
 using keys::Press;
 
-// The bundled efont covers Latin, Cyrillic and CJK but not the typographic
-// punctuation Codex titles are full of, so those code points render as blanks.
-// Fold them onto ASCII on the way in rather than shipping a second font.
+// Fold unsupported punctuation to ASCII without cutting UTF-8 sequences.
 void sanitize_utf8(const char* in, char* out, int out_size)
 {
-    struct Fold { const char* from; const char* to; };
-    static const Fold kFolds[] = {
-        {"\xE2\x80\x94", "-"},   {"\xE2\x80\x93", "-"},    // em / en dash
-        {"\xE2\x80\x95", "-"},   {"\xE2\x88\x92", "-"},    // horizontal bar, minus
-        {"\xE2\x80\xA6", "..."},                            // ellipsis
-        {"\xE2\x80\x9C", "\""},  {"\xE2\x80\x9D", "\""},   // curly double quotes
-        {"\xE2\x80\x98", "'"},   {"\xE2\x80\x99", "'"},    // curly single quotes
-        {"\xC2\xAB", "\""},       {"\xC2\xBB", "\""},        // guillemets
-        {"\xE2\x86\x92", "->"},  {"\xE2\x86\x90", "<-"},   // arrows
-        {"\xE2\x80\xA2", "*"},   {"\xC2\xB7", "*"},         // bullets
-        {"\xC2\xA0", " "},        {"\xE2\x80\xAF", " "},     // no-break spaces
+    if (!out || out_size <= 0)
+        return;
+    out[0] = 0;
+    if (!in)
+        return;
+    struct Fold {
+        const char* from;
+        const char* to;
     };
-
+    static const Fold folds[] = {
+        {"\xE2\x80\x94", "-"},  {"\xE2\x80\x93", "-"},   {"\xE2\x80\x95", "-"},
+        {"\xE2\x88\x92", "-"},  {"\xE2\x80\xA6", "..."}, {"\xE2\x80\x9C", "\""},
+        {"\xE2\x80\x9D", "\""}, {"\xE2\x80\x98", "'"},   {"\xE2\x80\x99", "'"},
+        {"\xC2\xAB", "\""},     {"\xC2\xBB", "\""},      {"\xE2\x86\x92", "->"},
+        {"\xE2\x86\x90", "<-"}, {"\xE2\x80\xA2", "*"},   {"\xC2\xB7", "*"},
+        {"\xC2\xA0", " "},      {"\xE2\x80\xAF", " "}};
     int written = 0;
-    for (const char* p = *in ? in : ""; *p && written < out_size - 1;) {
+    for (const char* p = in; *p && written < out_size - 1;) {
         const Fold* hit = nullptr;
-        for (const Fold& fold : kFolds) {
-            const size_t length = std::strlen(fold.from);
-            if (std::strncmp(p, fold.from, length) == 0) { hit = &fold; break; }
+        for (const auto& f : folds) {
+            size_t n = std::strlen(f.from);
+            if (std::strncmp(p, f.from, n) == 0) {
+                hit = &f;
+                break;
+            }
         }
         if (hit) {
-            const int length = static_cast<int>(std::strlen(hit->to));
-            if (written + length >= out_size - 1) break;
-            std::memcpy(out + written, hit->to, length);
-            written += length;
+            int n = static_cast<int>(std::strlen(hit->to));
+            if (written + n >= out_size)
+                break;
+            std::memcpy(out + written, hit->to, n);
+            written += n;
             p += std::strlen(hit->from);
             continue;
         }
-        out[written++] = *p++;
+        uint8_t lead = static_cast<uint8_t>(*p);
+        int n = 1;
+        if ((lead & 0xE0u) == 0xC0u)
+            n = 2;
+        else if ((lead & 0xF0u) == 0xE0u)
+            n = 3;
+        else if ((lead & 0xF8u) == 0xF0u)
+            n = 4;
+        else if ((lead & 0x80u) != 0)
+            n = 0;
+        bool valid = n > 0;
+        for (int i = 1; valid && i < n; ++i)
+            valid = p[i] && (static_cast<uint8_t>(p[i]) & 0xC0u) == 0x80u;
+        if (!valid) {
+            out[written++] = '?';
+            ++p;
+            continue;
+        }
+        if (written + n >= out_size)
+            break;
+        std::memcpy(out + written, p, n);
+        written += n;
+        p += n;
     }
     out[written] = 0;
 }
-
-// ================================================================== protocol
-model::Status parse_status(const char* text)
+bool parse_int_field(const char* text, int min, int max, int& value)
 {
-    if (std::strstr(text, "RUN"))    return model::Status::Running;
-    if (std::strstr(text, "INPUT"))  return model::Status::NeedsInput;
-    if (std::strstr(text, "APPROV")) return model::Status::NeedsInput;
-    if (std::strstr(text, "DONE"))   return model::Status::Done;
-    if (std::strstr(text, "COMPLETE")) return model::Status::Done;
-    if (std::strstr(text, "ERROR"))  return model::Status::Error;
-    return model::Status::Idle;
+    if (!text || !*text)
+        return false;
+    errno = 0;
+    char* end = nullptr;
+    long v = std::strtol(text, &end, 10);
+    if (errno || end == text || !end || *end || v < min || v > max)
+        return false;
+    value = static_cast<int>(v);
+    return true;
+}
+bool parse_status(const char* text, model::Status& status)
+{
+    if (!text)
+        return false;
+    if (!std::strcmp(text, "RUN") || !std::strcmp(text, "RUNNING"))
+        status = model::Status::Running;
+    else if (!std::strcmp(text, "INPUT") || !std::strcmp(text, "APPROVAL") ||
+             !std::strcmp(text, "APPROVE"))
+        status = model::Status::NeedsInput;
+    else if (!std::strcmp(text, "DONE") || !std::strcmp(text, "COMPLETE") ||
+             !std::strcmp(text, "COMPLETED"))
+        status = model::Status::Done;
+    else if (!std::strcmp(text, "ERROR"))
+        status = model::Status::Error;
+    else if (!std::strcmp(text, "IDLE"))
+        status = model::Status::Idle;
+    else
+        return false;
+    return true;
+}
+uint32_t diagnostic_color(model::Status status)
+{
+    switch (status) {
+    case model::Status::Running:
+        return 0x304ffe;
+    case model::Status::NeedsInput:
+        return 0xff6d00;
+    case model::Status::Done:
+        return 0xffffff;
+    case model::Status::Error:
+        return 0xff0033;
+    case model::Status::Idle:
+        return 0;
+    }
+    return 0;
+}
+void reset_staged_tasks()
+{
+    for (auto& task : staged)
+        task = model::Task{};
+    std::memset(staged_present, 0, sizeof(staged_present));
+    staged_count = 0;
+    staged_started_ms = 0;
+}
+bool staged_batch_complete(int count)
+{
+    for (int i = 0; i < count; ++i)
+        if (!staged_present[i])
+            return false;
+    return true;
+}
+void service_staged_timeout()
+{
+    if (!staged_started_ms)
+        return;
+    uint32_t age = lgfx::millis() - staged_started_ms;
+    if (age <= kStagedBatchTimeoutMs)
+        return;
+    hostlink::sendf("CCP_DECK|ERROR|incomplete_timeout|age_ms=%u\n", (unsigned)age);
+    reset_staged_tasks();
 }
 
 // Two different statements, deliberately kept apart:
@@ -121,8 +214,8 @@ void publish_settings(bool user_initiated)
 {
     const auto& s = model::state;
     hostlink::sendf("%s|%s|%s|%s|%s\n", user_initiated ? "CCP_CFG" : "CCP_CFGACK",
-                s.models.current_wire(), s.efforts.current_wire(),
-                s.speeds.current_wire(), s.sound_volume > 0 ? "on" : "off");
+                    s.models.current_wire(), s.efforts.current_wire(), s.speeds.current_wire(),
+                    s.sound_volume > 0 ? "on" : "off");
 }
 
 // ------------------------------------------------------------ encoder gestures
@@ -138,29 +231,41 @@ bool send_encoder_step(bool right)
 
 // Preserve the physical down edge. keys.cpp emits the matching release, so
 // Codex can distinguish a click from the long press that opens device settings.
-bool send_encoder_press()
+bool send_encoder_press_to(codex_micro::Transport target)
 {
-    // Codex opens a temporary lighting preview for the model picker. Its first
-    // breath slot is not a chat selection, so guard before the host can reply.
     codex_micro::suppress_host_selection(2000);
-    return companion_codex_key("ENC", 1);
+    return codex_micro::send_key_to(target, "ENC", 1);
 }
-
-bool send_native_action(int slot, bool down, int agent = -1)
+bool send_native_action_to(codex_micro::Transport target, int slot, bool down, int agent = -1)
 {
-    if ((slot < 6 || slot > 12) && slot != 1011) return false;
+    if ((slot < 6 || slot > 12) && slot != 1011)
+        return false;
     char key[12];
-    if (slot == 1011) std::snprintf(key, sizeof(key), "ACT10_ACT11");
-    else std::snprintf(key, sizeof(key), "ACT%02d", slot);
-    return companion_codex_key(key, down ? 1 : 0, agent);
+    if (slot == 1011)
+        std::snprintf(key, sizeof(key), "ACT10_ACT11");
+    else
+        std::snprintf(key, sizeof(key), "ACT%02d", slot);
+    return codex_micro::send_key_to(target, key, down ? 1 : 0, agent);
 }
-
-bool send_agent_key(int slot, bool down)
+bool send_agent_key_to(codex_micro::Transport target, int slot, bool down)
 {
-    if (slot < 0 || slot >= model::kMaxTasks) return false;
+    if (slot < 0 || slot >= model::kMaxTasks || target == codex_micro::Transport::None)
+        return false;
     char key[5];
     std::snprintf(key, sizeof(key), "AG%02d", slot);
-    return companion_codex_key(key, down ? 1 : 0, slot);
+    return codex_micro::send_key_to(target, key, down ? 1 : 0, slot);
+}
+void release_voice_gesture()
+{
+    if (voice_gesture.transport != codex_micro::Transport::None) {
+        if (voice_gesture.active)
+            codex_micro::send_key_to(voice_gesture.transport, "ACT10", 0, voice_gesture.agent);
+        if (voice_gesture.agent_key_down)
+            send_agent_key_to(voice_gesture.transport, voice_gesture.agent, false);
+    }
+    int agent = voice_gesture.agent;
+    voice_gesture = VoiceGesture{};
+    ui::set_voice_active(false, std::max(0, agent));
 }
 
 void toggle_sound()
@@ -187,11 +292,13 @@ void adjust_volume(int delta)
     const uint8_t previous = s.sound_volume;
     const int next = std::clamp(static_cast<int>(s.sound_volume) + delta * 10, 0, 100);
     s.sound_volume = static_cast<uint8_t>(next);
-    if (next > 0) s.unmuted_volume = s.sound_volume;
+    if (next > 0)
+        s.unmuted_volume = s.sound_volume;
     audio::apply_volume();
     // Audition the value itself, not the old setting: the same short neutral
     // sound at every step makes adjacent levels directly comparable.
-    if (s.sound_volume != previous) audio::play(audio::Cue::Select);
+    if (s.sound_volume != previous)
+        audio::play(audio::Cue::Select);
     store::save_settings();
     publish_settings(true);
     char value[12];
@@ -205,8 +312,7 @@ void toggle_startup_sound()
     auto& s = model::state;
     s.startup_sound_on = !s.startup_sound_on;
     store::save_settings();
-    ui::toast(s.startup_sound_on ? "STARTUP CHIME ON" : "STARTUP CHIME OFF",
-              "", theme::kInk);
+    ui::toast(s.startup_sound_on ? "STARTUP CHIME ON" : "STARTUP CHIME OFF", "", theme::kInk);
     audio::play(audio::Cue::Select);
     ui::invalidate();
 }
@@ -217,13 +323,29 @@ bool send_joystick_impulse(Key key)
     // right and angles advance clockwise because positive Y points down.
     float angle = 0.f;
     switch (key) {
-        case Key::Right: angle = 0.00f; break;
-        case Key::Down:  angle = 0.25f; break;
-        case Key::Left:  angle = 0.50f; break;
-        case Key::Up:    angle = 0.75f; break;
-        default: return false;
+    case Key::Right:
+        angle = 0.00f;
+        break;
+    case Key::Down:
+        angle = 0.25f;
+        break;
+    case Key::Left:
+        angle = 0.50f;
+        break;
+    case Key::Up:
+        angle = 0.75f;
+        break;
+    default:
+        return false;
     }
-    if (!companion_codex_joystick(angle, 1.f)) return false;
+    const auto target = codex_micro::active_transport();
+    if (target == codex_micro::Transport::None)
+        return false;
+    if (joystick_deflected && joystick_transport != target)
+        codex_micro::send_joystick_to(joystick_transport, 0.f, 0.f);
+    if (!codex_micro::send_joystick_to(target, angle, 1.f))
+        return false;
+    joystick_transport = target;
     joystick_deflected = true;
     joystick_release_ms = lgfx::millis() + 85;
     return true;
@@ -247,7 +369,10 @@ void commit_tasks(int selected_hint)
         // slot, because the host reorders by recency.
         const model::Task* before = nullptr;
         for (int j = 0; j < previous_count; ++j) {
-            if (std::strcmp(previous[j].id, staged[i].id) == 0) { before = &previous[j]; break; }
+            if (std::strcmp(previous[j].id, staged[i].id) == 0) {
+                before = &previous[j];
+                break;
+            }
         }
         if (before) {
             staged[i].unseen_done = before->unseen_done;
@@ -255,23 +380,28 @@ void commit_tasks(int selected_hint)
             if (before->status != model::Status::Done && staged[i].status == model::Status::Done) {
                 staged[i].unseen_done = true;
                 staged[i].completion_hold = true;
+                // TASK has no separate lamp frame. Use the native unread
+                // completion colour so the animation finalizer can preserve
+                // background unread state and settle a selected task locally.
+                staged[i].color = 0x00ff4c;
                 ++newly_done;
-                if (!headline) headline = staged[i].title;
+                if (!headline)
+                    headline = staged[i].title;
             }
             if (staged[i].status != model::Status::Done) {
                 staged[i].unseen_done = false;
                 staged[i].completion_hold = false;
             }
-            if (before->status != model::Status::NeedsInput && staged[i].status == model::Status::NeedsInput) {
+            if (before->status != model::Status::NeedsInput &&
+                staged[i].status == model::Status::NeedsInput) {
                 ++newly_input;
-                if (!headline) headline = staged[i].title;
+                if (!headline)
+                    headline = staged[i].title;
             }
             if (before->status != staged[i].status && i < theme::kCellCount) {
                 model::queue_announcement(i, staged[i].status, before->status,
-                                          staged[i].unseen_done,
-                                          staged[i].unseen_done,
-                                          before->unseen_done,
-                                          lgfx::millis());
+                                          staged[i].unseen_done, staged[i].unseen_done,
+                                          before->unseen_done, lgfx::millis());
             }
         } else if (staged[i].status == model::Status::Done && previous_count > 0) {
             // A thread that arrives already-done is new to us but not news.
@@ -281,7 +411,12 @@ void commit_tasks(int selected_hint)
 
     std::memcpy(s.tasks, staged, sizeof(s.tasks));
     s.task_count = staged_count;
-    if (selected_hint >= 0 && selected_hint < staged_count) s.selected = selected_hint;
+    if (selected_hint >= 0 && selected_hint < staged_count)
+        s.selected = selected_hint;
+    // Diagnostic TASK batches exercise the same read-state contract as native
+    // Codex lighting: a selected completion stays green through its takeover,
+    // then settles to viewed grey. Background completions remain unread.
+    model::mark_done_viewed(s.selected);
     ui::select(s.selected, true);
     ui::relayout();
 
@@ -289,8 +424,10 @@ void commit_tasks(int selected_hint)
         ui::toast("NEEDS INPUT", headline ? headline : "", theme::kInput);
     } else if (newly_done > 0) {
         char title[24];
-        if (newly_done == 1) std::snprintf(title, sizeof(title), "TASK DONE");
-        else std::snprintf(title, sizeof(title), "%d TASKS DONE", newly_done);
+        if (newly_done == 1)
+            std::snprintf(title, sizeof(title), "TASK DONE");
+        else
+            std::snprintf(title, sizeof(title), "%d TASKS DONE", newly_done);
         ui::toast(title, headline ? headline : "", theme::kDone);
     }
     ui::invalidate();
@@ -300,10 +437,14 @@ void enable_m5apps_autostart()
 {
     nvs_handle_t handle = 0;
     esp_err_t err = nvs_open_from_partition("apps_nvs", "system", NVS_READWRITE, &handle);
-    if (err == ESP_OK) err = nvs_set_u8(handle, "last_app", 1);
-    if (err == ESP_OK) err = nvs_set_i32(handle, "last_app_to", 2);
-    if (err == ESP_OK) err = nvs_commit(handle);
-    if (handle) nvs_close(handle);
+    if (err == ESP_OK)
+        err = nvs_set_u8(handle, "last_app", 1);
+    if (err == ESP_OK)
+        err = nvs_set_i32(handle, "last_app_to", 2);
+    if (err == ESP_OK)
+        err = nvs_commit(handle);
+    if (handle)
+        nvs_close(handle);
     hostlink::emit("m5apps_autostart", err == ESP_OK, esp_err_to_name(err));
 }
 
@@ -311,10 +452,16 @@ void return_to_m5apps()
 {
     const esp_partition_t* factory = esp_partition_find_first(
         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, nullptr);
-    if (!factory) { hostlink::emit("return_to_m5apps", false, "factory_not_found"); return; }
+    if (!factory) {
+        hostlink::emit("return_to_m5apps", false, "factory_not_found");
+        return;
+    }
     const esp_err_t err = esp_ota_set_boot_partition(factory);
     hostlink::emit("return_to_m5apps", err == ESP_OK, esp_err_to_name(err));
-    if (err == ESP_OK) { vTaskDelay(pdMS_TO_TICKS(120)); esp_restart(); }
+    if (err == ESP_OK) {
+        vTaskDelay(pdMS_TO_TICKS(120));
+        esp_restart();
+    }
 }
 
 void send_screenshot(const char* scene)
@@ -322,8 +469,8 @@ void send_screenshot(const char* scene)
     const uint16_t* pixels = ui::capture_frame(scene);
     if (!pixels) {
         char error[96];
-        const int length = std::snprintf(error, sizeof(error),
-            "CCP_SHOT|ERROR|unknown_scene|%s\n", scene ? scene : "");
+        const int length = std::snprintf(error, sizeof(error), "CCP_SHOT|ERROR|unknown_scene|%s\n",
+                                         scene ? scene : "");
         hostlink::send_usb(error, static_cast<size_t>(std::max(0, length)));
         return;
     }
@@ -332,9 +479,8 @@ void send_screenshot(const char* scene)
     constexpr int kChunkPixels = 120;
     char line[32 + kChunkPixels * 4];
     hostlink::begin_usb_bulk();
-    int length = std::snprintf(line, sizeof(line),
-        "CCP_SHOT|BEGIN|%s|%d|%d|RGB565|%d\n",
-        scene, theme::kScreenW, theme::kScreenH, kPixels);
+    int length = std::snprintf(line, sizeof(line), "CCP_SHOT|BEGIN|%s|%d|%d|RGB565|%d\n", scene,
+                               theme::kScreenW, theme::kScreenH, kPixels);
     hostlink::send_usb(line, static_cast<size_t>(length));
 
     uint32_t checksum = 2166136261u;
@@ -350,7 +496,8 @@ void send_screenshot(const char* scene)
         }
         line[used++] = '\n';
         hostlink::send_usb(line, static_cast<size_t>(used));
-        if ((sequence & 7) == 7) vTaskDelay(pdMS_TO_TICKS(1));
+        if ((sequence & 7) == 7)
+            vTaskDelay(pdMS_TO_TICKS(1));
     }
     length = std::snprintf(line, sizeof(line), "CCP_SHOT|END|%08lX\n",
                            static_cast<unsigned long>(checksum));
@@ -362,11 +509,13 @@ void send_screenshot(const char* scene)
 void handle_press(const Press& press)
 {
     auto& s = model::state;
-    if (press.key == Key::None) return;
+    if (press.key == Key::None)
+        return;
     // Developer previews are inert captures of real rendering paths. Escape is
     // their only control, so testing a screen cannot accidentally operate Codex.
     if (ui::developer_preview_active()) {
-        if (press.down && press.key == Key::Back) ui::close_developer_preview();
+        if (press.down && press.key == Key::Back)
+            ui::close_developer_preview();
         return;
     }
     // Host actions stay disabled without Codex, but local settings remain
@@ -374,34 +523,41 @@ void handle_press(const Press& press)
     // task deck; Opt+Tab keeps the same rule for diagnostics.
     if (s.link == model::Link::Offline) {
         if (press.key == Key::Settings) {
-            ui::go(ui::screen() == ui::Screen::Settings
-                       ? ui::Screen::Boot : ui::Screen::Settings);
+            ui::go(ui::screen() == ui::Screen::Settings ? ui::Screen::Boot : ui::Screen::Settings);
             return;
         }
         if (press.key == Key::DebugSettings) {
-            ui::go(ui::screen() == ui::Screen::DebugSettings
-                       ? ui::Screen::Boot : ui::Screen::DebugSettings);
+            ui::go(ui::screen() == ui::Screen::DebugSettings ? ui::Screen::Boot
+                                                             : ui::Screen::DebugSettings);
             return;
         }
         const auto screen = ui::screen();
-        if (screen != ui::Screen::Settings
-            && screen != ui::Screen::DebugSettings
-            && screen != ui::Screen::StatusDebug
-            && screen != ui::Screen::ChimeLab) return;
+        if (screen != ui::Screen::Settings && screen != ui::Screen::DebugSettings &&
+            screen != ui::Screen::StatusDebug && screen != ui::Screen::ChimeLab)
+            return;
     }
-
 
     // Native controls preserve their physical edge. Codex uses these releases
     // to distinguish an Agent Key tap from a double tap and an encoder click
     // from the long press that opens its own device configuration.
     if (!press.down) {
         if (press.key == Key::Digit) {
-            const int slot = (press.digit == 0 ? 10 : press.digit) - 1;
-            send_agent_key(slot, false);
-        } else if (press.key == Key::NativeAction) {
-            send_native_action(press.digit, false, s.selected);
+            int slot = (press.digit == 0 ? 10 : press.digit) - 1;
+            if (slot >= 0 && slot < model::kMaxTasks) {
+                auto target = agent_key_transport[slot];
+                if (target != codex_micro::Transport::None)
+                    send_agent_key_to(target, slot, false);
+                agent_key_transport[slot] = codex_micro::Transport::None;
+            }
+        } else if (press.key == Key::NativeAction && press.digit >= 0 && press.digit < 13) {
+            auto target = native_action_transport[press.digit];
+            if (target != codex_micro::Transport::None)
+                send_native_action_to(target, press.digit, false, s.selected);
+            native_action_transport[press.digit] = codex_micro::Transport::None;
         } else if (press.key == Key::EncoderPress) {
-            companion_codex_key("ENC", 0);
+            if (encoder_press_transport != codex_micro::Transport::None)
+                codex_micro::send_key_to(encoder_press_transport, "ENC", 0);
+            encoder_press_transport = codex_micro::Transport::None;
         }
         return;
     }
@@ -430,7 +586,12 @@ void handle_press(const Press& press)
                 s.usb_hid_enabled = requested;
                 // Persist before removing USB so an unexpected cable event or
                 // reset cannot resurrect a mode the user explicitly disabled.
-                store::flush();
+                if (!store::flush()) {
+                    s.usb_hid_enabled = !requested;
+                    ui::toast("SETTINGS ERROR", "USB preference not saved", theme::kError);
+                    ui::invalidate();
+                    return;
+                }
                 if (!companion_usb_set_enabled(requested)) {
                     s.usb_hid_enabled = !requested;
                     store::flush();
@@ -451,206 +612,255 @@ void handle_press(const Press& press)
             } else if (row == ui::DebugSettingsRow::PreviewControl) {
                 ui::show_developer_preview(ui::DeveloperPreview::Control);
             } else {
-                ui::go(row == ui::DebugSettingsRow::ChimeLab
-                           ? ui::Screen::ChimeLab : ui::Screen::StatusDebug);
+                ui::go(row == ui::DebugSettingsRow::ChimeLab ? ui::Screen::ChimeLab
+                                                             : ui::Screen::StatusDebug);
             }
             return;
         }
     }
 
     switch (press.key) {
-        case Key::Mute:
-            toggle_sound();
-            break;
+    case Key::Mute:
+        toggle_sound();
+        break;
 
-        case Key::Record:
-            // Keyboard-generated Record has no release edge. Treat it as a
-            // short native microphone gesture; the physical G0 button below
-            // supplies true press/release push-to-talk.
-            companion_codex_key("ACT10", 1, s.selected);
-            companion_codex_key("ACT10", 0, s.selected);
-            break;
+    case Key::Record:
+        // Keyboard-generated Record has no release edge. Treat it as a
+        // short native microphone gesture; the physical G0 button below
+        // supplies true press/release push-to-talk.
+        companion_codex_key("ACT10", 1, s.selected);
+        companion_codex_key("ACT10", 0, s.selected);
+        break;
 
-        // These keys are the physical substitute for Codex Micro's dial. In
-        // Composer navigation they move focus/options; in Reasoning only they
-        // adjust effort; custom mappings may do something else entirely.
-        case Key::EncoderLeft:
-        case Key::EncoderRight: {
-            const bool right = press.key == Key::EncoderRight;
-            if (ui::composer_control_active()) codex_micro::suppress_host_selection(2000);
-            if (!send_encoder_step(right)) {
-                ui::toast("DIAL", "no host", theme::kOrange);
-                break;
-            }
-            audio::play(right ? audio::Cue::StepRight : audio::Cue::StepLeft);
-            if (ui::composer_control_active())
-                ui::notify_composer_control_step(right ? 1 : -1);
+    // These keys are the physical substitute for Codex Micro's dial. In
+    // Composer navigation they move focus/options; in Reasoning only they
+    // adjust effort; custom mappings may do something else entirely.
+    case Key::EncoderLeft:
+    case Key::EncoderRight: {
+        const bool right = press.key == Key::EncoderRight;
+        if (ui::composer_control_active())
+            codex_micro::suppress_host_selection(2000);
+        if (!send_encoder_step(right)) {
+            ui::toast("DIAL", "no host", theme::kOrange);
             break;
         }
+        audio::play(right ? audio::Cue::StepRight : audio::Cue::StepLeft);
+        if (ui::composer_control_active())
+            ui::notify_composer_control_step(right ? 1 : -1);
+        break;
+    }
 
-        case Key::EncoderPress: {
-            // A click opens or selects whatever Codex currently focuses. Wait
-            // for a host light preview before presenting a local control UI.
-            const bool had_preview = ui::composer_control_active();
-            if (had_preview) ui::dismiss_composer_control_preview();
-            else ui::allow_composer_control_preview();
-            if (!send_encoder_press()) {
-                ui::toast("DIAL", "no host", theme::kOrange);
-                break;
-            }
-            if (had_preview) {
-                audio::play(audio::Cue::MenuApply);
-            }
+    case Key::EncoderPress: {
+        // A click opens or selects whatever Codex currently focuses. Wait
+        // for a host light preview before presenting a local control UI.
+        const bool had_preview = ui::composer_control_active();
+        if (had_preview)
+            ui::dismiss_composer_control_preview();
+        else
+            ui::allow_composer_control_preview();
+        const auto target = codex_micro::active_transport();
+        if (!send_encoder_press_to(target)) {
+            encoder_press_transport = codex_micro::Transport::None;
+            ui::toast("DIAL", "no host", theme::kOrange);
             break;
         }
+        encoder_press_transport = target;
+        if (had_preview) {
+            audio::play(audio::Cue::MenuApply);
+        }
+        break;
+    }
 
-        case Key::NativeAction: {
-            // T..P are the six physical command slots ACT06..ACT11. Codex owns
-            // their current command/Skill mapping exactly as it does for Micro.
-            if (!send_native_action(press.digit, true, s.selected)) {
-                ui::toast("NO HOST", "action not sent", theme::kOrange);
-                break;
-            }
-            if (press.digit == 7) ui::toast("APPROVE", "sent to Codex", theme::kDone);
-            else if (press.digit == 8) ui::toast("REJECT", "sent to Codex", theme::kInput);
-            audio::play(audio::Cue::Select);
+    case Key::NativeAction: {
+        // T..P are the six physical command slots ACT06..ACT11. Codex owns
+        // their current command/Skill mapping exactly as it does for Micro.
+        const auto target = codex_micro::active_transport();
+        if (!send_native_action_to(target, press.digit, true, s.selected)) {
+            if (press.digit >= 0 && press.digit < 13)
+                native_action_transport[press.digit] = codex_micro::Transport::None;
+            ui::toast("NO HOST", "action not sent", theme::kOrange);
             break;
         }
+        if (press.digit >= 0 && press.digit < 13)
+            native_action_transport[press.digit] = target;
+        if (press.digit == 7)
+            ui::toast("APPROVE", "sent to Codex", theme::kDone);
+        else if (press.digit == 8)
+            ui::toast("REJECT", "sent to Codex", theme::kInput);
+        audio::play(audio::Cue::Select);
+        break;
+    }
 
-        case Key::Other:
-            break;   // no action of its own; it already woke the panel
+    case Key::Other:
+        break; // no action of its own; it already woke the panel
 
-        case Key::Settings:
-            ui::go(ui::screen() == ui::Screen::Settings ? ui::Screen::Deck : ui::Screen::Settings);
-            break;
+    case Key::Settings:
+        ui::go(ui::screen() == ui::Screen::Settings ? ui::Screen::Deck : ui::Screen::Settings);
+        break;
 
-        case Key::DebugSettings:
-            ui::go(ui::screen() == ui::Screen::DebugSettings
-                       ? ui::Screen::Deck : ui::Screen::DebugSettings);
-            break;
+    case Key::DebugSettings:
+        ui::go(ui::screen() == ui::Screen::DebugSettings ? ui::Screen::Deck
+                                                         : ui::Screen::DebugSettings);
+        break;
 
-        case Key::Help:
-            ui::go(ui::screen() == ui::Screen::Help ? ui::Screen::Deck : ui::Screen::Help);
-            break;
+    case Key::Help:
+        ui::go(ui::screen() == ui::Screen::Help ? ui::Screen::Deck : ui::Screen::Help);
+        break;
 
-        case Key::Back:
-            // Back never leaves the app. Handing the device back to M5Apps is a
-            // deliberate action from Settings, because it costs a reboot and
-            // makes the companion unreachable until the user returns to it.
-            ui::go((ui::screen() == ui::Screen::StatusDebug
-                    || ui::screen() == ui::Screen::ChimeLab)
-                       ? ui::Screen::DebugSettings : ui::Screen::Deck);
-            break;
+    case Key::Back:
+        // Back never leaves the app. Handing the device back to M5Apps is a
+        // deliberate action from Settings, because it costs a reboot and
+        // makes the companion unreachable until the user returns to it.
+        ui::go((ui::screen() == ui::Screen::StatusDebug || ui::screen() == ui::Screen::ChimeLab)
+                   ? ui::Screen::DebugSettings
+                   : ui::Screen::Deck);
+        break;
 
-        default: break;
+    default:
+        break;
     }
 
     switch (ui::screen()) {
-        case ui::Screen::Settings:
-            if (press.key == Key::Up)    ui::settings_move(-1);
-            if (press.key == Key::Down)  ui::settings_move(1);
-            if (ui::settings_focus() == ui::SettingsRow::BleProfile
-                && (press.key == Key::Left || press.key == Key::Right)) {
-                auto& profile = model::state.ble_profile;
-                profile = static_cast<uint8_t>((profile
-                    + (press.key == Key::Right ? 1 : 2)) % 3);
-                store::flush();
-                const bool switching = companion_ble_select_profile(profile);
-                ui::toast(switching ? "HOST CHANNEL" : "BLE SWITCH FAILED",
-                          switching ? "Connecting" : "Try again", theme::kInput);
+    case ui::Screen::Settings:
+        if (press.key == Key::Up)
+            ui::settings_move(-1);
+        if (press.key == Key::Down)
+            ui::settings_move(1);
+        if (ui::settings_focus() == ui::SettingsRow::BleProfile &&
+            (press.key == Key::Left || press.key == Key::Right)) {
+            auto& profile = model::state.ble_profile;
+            profile = static_cast<uint8_t>((profile + (press.key == Key::Right ? 1 : 2)) % 3);
+            const uint8_t previous_profile =
+                static_cast<uint8_t>((profile + (press.key == Key::Right ? 2 : 1)) % 3);
+            if (!store::flush()) {
+                profile = previous_profile;
+                ui::toast("SETTINGS ERROR", "Host channel not saved", theme::kError);
+                return;
             }
-            if (ui::settings_focus() == ui::SettingsRow::Volume
-                && (press.key == Key::Left || press.key == Key::Right))
-                adjust_volume(press.key == Key::Right ? 1 : -1);
-            if (press.key == Key::Enter) {
-                if (ui::settings_focus() == ui::SettingsRow::Exit) {
-                    if (exit_armed) { return_to_m5apps(); }
-                    else { exit_armed = true; ui::toast("EXIT TO M5APPS?", "Press enter again", theme::kInput); }
-                } else if (ui::settings_focus() == ui::SettingsRow::Volume) {
-                    adjust_volume(1);
-                } else if (ui::settings_focus() == ui::SettingsRow::StartupSound) {
-                    toggle_startup_sound();
+            const bool switching = companion_ble_select_profile(profile);
+            ui::toast(switching ? "HOST CHANNEL" : "BLE SWITCH FAILED",
+                      switching ? "Connecting" : "Try again", theme::kInput);
+        }
+        if (ui::settings_focus() == ui::SettingsRow::Volume &&
+            (press.key == Key::Left || press.key == Key::Right))
+            adjust_volume(press.key == Key::Right ? 1 : -1);
+        if (press.key == Key::Enter) {
+            if (ui::settings_focus() == ui::SettingsRow::Exit) {
+                if (exit_armed) {
+                    return_to_m5apps();
+                } else {
+                    exit_armed = true;
+                    ui::toast("EXIT TO M5APPS?", "Press enter again", theme::kInput);
                 }
+            } else if (ui::settings_focus() == ui::SettingsRow::Volume) {
+                adjust_volume(1);
+            } else if (ui::settings_focus() == ui::SettingsRow::StartupSound) {
+                toggle_startup_sound();
             }
-            if (press.key != Key::Enter) exit_armed = false;
-            break;
+        }
+        if (press.key != Key::Enter)
+            exit_armed = false;
+        break;
 
-        case ui::Screen::DebugSettings:
-            break;
+    case ui::Screen::DebugSettings:
+        break;
 
-        case ui::Screen::StatusDebug:
-            if (press.key == Key::Up) ui::debug_move(-1);
-            if (press.key == Key::Down) ui::debug_move(1);
-            if ((press.key == Key::Left && ui::debug_adjust(-1))
-                || (press.key == Key::Right && ui::debug_adjust(1)))
-                store::save_settings();
-            if (press.key == Key::Enter && ui::debug_run()) store::save_settings();
-            break;
+    case ui::Screen::StatusDebug:
+        if (press.key == Key::Up)
+            ui::debug_move(-1);
+        if (press.key == Key::Down)
+            ui::debug_move(1);
+        if ((press.key == Key::Left && ui::debug_adjust(-1)) ||
+            (press.key == Key::Right && ui::debug_adjust(1)))
+            store::save_settings();
+        if (press.key == Key::Enter && ui::debug_run())
+            store::save_settings();
+        break;
 
-        case ui::Screen::ChimeLab:
-            if (press.key == Key::Left)  ui::chime_move(-1, 0);
-            if (press.key == Key::Right) ui::chime_move(1, 0);
-            if (press.key == Key::Up)    ui::chime_move(0, -1);
-            if (press.key == Key::Down)  ui::chime_move(0, 1);
-            if (press.key == Key::Left || press.key == Key::Right
-                || press.key == Key::Up || press.key == Key::Down)
-                store::save_settings();
-            if (press.key == Key::Enter) audio::play(audio::Cue::Boot);
-            break;
+    case ui::Screen::ChimeLab:
+        if (press.key == Key::Left)
+            ui::chime_move(-1, 0);
+        if (press.key == Key::Right)
+            ui::chime_move(1, 0);
+        if (press.key == Key::Up)
+            ui::chime_move(0, -1);
+        if (press.key == Key::Down)
+            ui::chime_move(0, 1);
+        if (press.key == Key::Left || press.key == Key::Right || press.key == Key::Up ||
+            press.key == Key::Down)
+            store::save_settings();
+        if (press.key == Key::Enter)
+            audio::play(audio::Cue::Boot);
+        break;
 
-        case ui::Screen::Deck:
-        default:
-            if (press.key == Key::Up || press.key == Key::Right
-                || press.key == Key::Down || press.key == Key::Left) {
-                if (!send_joystick_impulse(press.key))
-                    ui::toast("NO HOST", "stick not sent", theme::kOrange);
-            }
-            if (press.key == Key::Digit) {
-                const int slot = (press.digit == 0 ? 10 : press.digit) - 1;
-                if (slot < s.task_count) {
-                    ui::select(slot);
-                    ui::notify_press(slot);
-                    send_agent_key(slot, true);
+    case ui::Screen::Deck:
+    default:
+        if (press.key == Key::Up || press.key == Key::Right || press.key == Key::Down ||
+            press.key == Key::Left) {
+            if (!send_joystick_impulse(press.key))
+                ui::toast("NO HOST", "stick not sent", theme::kOrange);
+        }
+        if (press.key == Key::Digit) {
+            const int slot = (press.digit == 0 ? 10 : press.digit) - 1;
+            if (slot < s.task_count) {
+                ui::select(slot);
+                ui::notify_press(slot);
+                const auto target = codex_micro::active_transport();
+                if (send_agent_key_to(target, slot, true)) {
+                    agent_key_transport[slot] = target;
                     audio::play(audio::Cue::Select);
+                } else {
+                    agent_key_transport[slot] = codex_micro::Transport::None;
+                    ui::toast("NO HOST", "task not opened", theme::kOrange);
                 }
             }
-            if (press.key == Key::Enter) {
-                // Stock Codex Micro's CODEX key submits the composer. Ending
-                // push-to-talk only prepares text; Enter is the deliberate,
-                // separate send gesture and therefore uses ACT12 press/release.
-                if (!companion_codex_key("ACT12", 1, s.selected)) {
-                    ui::toast("NO HOST", "message not sent", theme::kOrange);
-                    break;
-                }
-                companion_codex_key("ACT12", 0, s.selected);
-                audio::play(audio::Cue::Select);
+        }
+        if (press.key == Key::Enter) {
+            // Stock Codex Micro's CODEX key submits the composer. Ending
+            // push-to-talk only prepares text; Enter is the deliberate,
+            // separate send gesture and therefore uses ACT12 press/release.
+            if (!companion_codex_key("ACT12", 1, s.selected)) {
+                ui::toast("NO HOST", "message not sent", theme::kOrange);
+                break;
             }
-            if (press.key == Key::Interrupt) {
-                const model::Task* task = model::selected_task();
-                if (task) {
-                    hostlink::sendf("CCP_INTERRUPT|%s\n", task->id);
-                    ui::toast("INTERRUPT SENT", task->title, theme::kInput);
-                }
+            companion_codex_key("ACT12", 0, s.selected);
+            audio::play(audio::Cue::Select);
+        }
+        if (press.key == Key::Interrupt) {
+            const model::Task* task = model::selected_task();
+            if (task) {
+                hostlink::sendf("CCP_INTERRUPT|%s\n", task->id);
+                ui::toast("INTERRUPT SENT", task->title, theme::kInput);
             }
-            break;
+        }
+        break;
     }
 }
 
-}  // namespace
+} // namespace
 
 // ============================================================ link callbacks
 namespace hostlink {
 
 void handle_line(char* line)
 {
+    if (!line || !*line)
+        return;
+    service_staged_timeout();
     ui::wake();
 
-    if (std::strcmp(line, "PING") == 0) { sendf("CCP_PONG|%s\n", kFirmwareVersion); return; }
+    if (std::strcmp(line, "PING") == 0) {
+        sendf("CCP_PONG|%s\n", kFirmwareVersion);
+        return;
+    }
     if (std::strncmp(line, "SCREENSHOT|", 11) == 0) {
         send_screenshot(line + 11);
         return;
     }
-    if (std::strcmp(line, "AUTOSTART") == 0) { enable_m5apps_autostart(); return; }
+    if (std::strcmp(line, "AUTOSTART") == 0) {
+        enable_m5apps_autostart();
+        return;
+    }
     if (std::strncmp(line, "HOST|", 5) == 0) {
         std::snprintf(model::state.host, sizeof(model::state.host), "%s", line + 5);
         ui::invalidate();
@@ -665,12 +875,19 @@ void handle_line(char* line)
         for (int i = 0; i < 3 && cursor; ++i) {
             fields[i] = cursor;
             char* next = std::strchr(cursor, '|');
-            if (next) { *next = 0; cursor = next + 1; } else cursor = nullptr;
+            if (next) {
+                *next = 0;
+                cursor = next + 1;
+            } else
+                cursor = nullptr;
         }
         auto& s = model::state;
-        if (fields[0]) s.models.select_wire(fields[0]);
-        if (fields[1]) s.efforts.select_wire(fields[1]);
-        if (fields[2]) s.speeds.select_wire(fields[2]);
+        if (fields[0])
+            s.models.select_wire(fields[0]);
+        if (fields[1])
+            s.efforts.select_wire(fields[1]);
+        if (fields[2])
+            s.speeds.select_wire(fields[2]);
         store::save_settings();
         publish_settings(false);
         ui::invalidate();
@@ -683,25 +900,31 @@ void handle_line(char* line)
     if (std::strncmp(line, "OPT|", 4) == 0) {
         char* cursor = line + 4;
         char* dimension = cursor;
-        if ((cursor = std::strchr(cursor, '|')) == nullptr) return;
+        if ((cursor = std::strchr(cursor, '|')) == nullptr)
+            return;
         *cursor++ = 0;
         char* current = cursor;
-        if ((cursor = std::strchr(cursor, '|')) == nullptr) return;
+        if ((cursor = std::strchr(cursor, '|')) == nullptr)
+            return;
         *cursor++ = 0;
 
         model::OptionList* list = nullptr;
-        if (std::strcmp(dimension, "MODEL") == 0)       list = &model::state.models;
-        else if (std::strcmp(dimension, "EFFORT") == 0) list = &model::state.efforts;
-        else if (std::strcmp(dimension, "SPEED") == 0)  list = &model::state.speeds;
-        if (!list) return;
+        if (std::strcmp(dimension, "MODEL") == 0)
+            list = &model::state.models;
+        else if (std::strcmp(dimension, "EFFORT") == 0)
+            list = &model::state.efforts;
+        else if (std::strcmp(dimension, "SPEED") == 0)
+            list = &model::state.speeds;
+        if (!list)
+            return;
 
         list->count = 0;
         char* save = nullptr;
         for (char* token = ::strtok_r(cursor, "|", &save);
-             token && list->count < model::kMaxOptions;
-             token = ::strtok_r(nullptr, "|", &save)) {
+             token && list->count < model::kMaxOptions; token = ::strtok_r(nullptr, "|", &save)) {
             char* equals = std::strchr(token, '=');
-            if (!equals) continue;
+            if (!equals)
+                continue;
             *equals = 0;
             std::snprintf(list->label[list->count], model::kLabelMax, "%s", token);
             std::snprintf(list->wire[list->count], model::kWireMax, "%s", equals + 1);
@@ -715,70 +938,95 @@ void handle_line(char* line)
         return;
     }
 
-    // TASK|<slot>|<status>|<threadId>|<title>. Title is last and unescaped, so a
-    // '|' inside a task name can never shift the other fields.
+    // TASK|<slot>|<status>|<threadId>|<title>.
     if (std::strncmp(line, "TASK|", 5) == 0) {
         char* cursor = line + 5;
         char* slot_text = cursor;
         char* status_text = nullptr;
         char* id_text = nullptr;
         char* title_text = nullptr;
-        if ((cursor = std::strchr(cursor, '|')) == nullptr) return;
-        *cursor++ = 0; status_text = cursor;
-        if ((cursor = std::strchr(cursor, '|')) == nullptr) return;
-        *cursor++ = 0; id_text = cursor;
-        if ((cursor = std::strchr(cursor, '|')) == nullptr) return;
-        *cursor++ = 0; title_text = cursor;
-
-        const int slot = std::atoi(slot_text);
-        if (slot < 0 || slot >= model::kMaxTasks) return;
+        if ((cursor = std::strchr(cursor, '|')) == nullptr)
+            return;
+        *cursor++ = 0;
+        status_text = cursor;
+        if ((cursor = std::strchr(cursor, '|')) == nullptr)
+            return;
+        *cursor++ = 0;
+        id_text = cursor;
+        if ((cursor = std::strchr(cursor, '|')) == nullptr)
+            return;
+        *cursor++ = 0;
+        title_text = cursor;
+        int slot = -1;
+        model::Status status = model::Status::Idle;
+        if (!parse_int_field(slot_text, 0, model::kMaxTasks - 1, slot) ||
+            !parse_status(status_text, status) || !*id_text) {
+            sendf("CCP_DECK|ERROR|invalid_task\n");
+            return;
+        }
+        if (staged_started_ms && slot == 0 && staged_present[0]) {
+            sendf("CCP_DECK|WARN|batch_restarted\n");
+            reset_staged_tasks();
+        }
+        if (!staged_started_ms)
+            staged_started_ms = lgfx::millis();
         staged[slot] = model::Task{};
-        staged[slot].status = parse_status(status_text);
-        // A synthetic slot is bound, so diagnostics exercise the same visual
-        // state as native thstatus rather than only the unbound outline.
-        staged[slot].present     = true;
-        staged[slot].seen        = true;
+        staged[slot].status = status;
+        staged[slot].color = diagnostic_color(status);
+        staged[slot].present = true;
+        staged[slot].seen = true;
         std::snprintf(staged[slot].id, sizeof(staged[slot].id), "%s", id_text);
         sanitize_utf8(title_text, staged[slot].title, sizeof(staged[slot].title));
-        if (slot + 1 > staged_count) staged_count = slot + 1;
+        staged_present[slot] = true;
+        staged_count = std::max(staged_count, slot + 1);
         return;
     }
-
     if (std::strncmp(line, "TASKS|", 6) == 0) {
         char* count_text = line + 6;
         char* selected_text = std::strchr(count_text, '|');
-        if (selected_text) *selected_text++ = 0;
-        int count = std::atoi(count_text);
-        if (count < 0) count = 0;
-        if (count > model::kMaxTasks) count = model::kMaxTasks;
+        if (selected_text)
+            *selected_text++ = 0;
+        int count = 0, selected = -1;
+        bool count_ok = parse_int_field(count_text, 0, model::kMaxTasks, count);
+        bool selected_ok =
+            !selected_text || parse_int_field(selected_text, -1, model::kMaxTasks - 1, selected);
+        if (!count_ok || !selected_ok || (count > 0 && !staged_batch_complete(count))) {
+            sendf("CCP_DECK|ERROR|incomplete_or_invalid|count=%s\n", count_text);
+            reset_staged_tasks();
+            return;
+        }
         staged_count = count;
-        commit_tasks(selected_text ? std::atoi(selected_text) : -1);
-        staged_count = 0;
-        // Acknowledge the committed list so the host can stop resending it. The
-        // The previous diagnostic protocol had no ack, so the host re-pushed state every few
-        // seconds and kept waking the panel.
+        commit_tasks(selected_text ? selected : -1);
+        reset_staged_tasks();
         sendf("CCP_DECK|%d|%d\n", model::state.task_count, model::state.selected);
         return;
     }
-
 }
 
-}  // namespace hostlink
+} // namespace hostlink
 
 extern "C" void companion_receive_line(const char* line)
 {
+    if (!line)
+        return;
+    const size_t length = ::strnlen(line, 512);
+    if (length >= 512) {
+        hostlink::sendf("CCP_SERIAL|line_dropped|reason=truncated_callback\n");
+        return;
+    }
     char copy[512];
-    std::snprintf(copy, sizeof(copy), "%s", line);
-    hostlink::note_host_activity();
+    std::memcpy(copy, line, length + 1);
     hostlink::handle_line(copy);
 }
 
-extern "C" void companion_transport_activity() { hostlink::note_host_activity(); }
+extern "C" void companion_transport_activity()
+{
+    hostlink::note_host_activity();
+}
 
 extern "C" void companion_ble_link_changed(bool connected)
 {
-    hostlink::emit("ble_link", connected, connected ? "connected" : "disconnected");
-    ui::invalidate();
+    std::printf("CCP_NATIVE|ble_link|%s\n", connected ? "connected" : "disconnected");
 }
 
 // ==================================================================== startup
@@ -791,7 +1039,9 @@ extern "C" void app_main(void)
     usb_serial_jtag_vfs_use_driver();
     fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
 
-    nvs_flash_init();
+    const esp_err_t default_nvs = nvs_flash_init();
+    hostlink::emit("default_nvs", default_nvs == ESP_OK || default_nvs == ESP_ERR_NOT_FOUND,
+                   esp_err_to_name(default_nvs));
     store::init();
     ui::init();
 
@@ -802,57 +1052,55 @@ extern "C" void app_main(void)
     keys::init();
     {
         char detail[64];
-        std::snprintf(detail, sizeof(detail), "%s,board=%d",
-                      keys::backend_name(), static_cast<int>(M5.getBoard()));
+        std::snprintf(detail, sizeof(detail), "%s,board=%d", keys::backend_name(),
+                      static_cast<int>(M5.getBoard()));
         hostlink::emit("keyboard", keys::backend() != keys::Backend::None, detail);
     }
     audio::init();
 
-    if (model::state.usb_hid_enabled) companion_usb_start();
     companion_ble_start();
+    if (model::state.usb_hid_enabled)
+        companion_usb_start();
     char bonds[24];
     std::snprintf(bonds, sizeof(bonds), "bonds=%d", companion_ble_bond_count());
     hostlink::emit("ble_start", true, bonds);
 
     publish_settings(false);
-    if (model::state.startup_sound_on) audio::play(audio::Cue::Boot);
+    if (model::state.startup_sound_on)
+        audio::play(audio::Cue::Boot);
 
     uint32_t last_status_ms = 0;
     uint32_t offline_since_ms = 0;
     bool pairing_was_active = false;
     constexpr uint32_t kOfflineGraceMs = 3000;
-    // Codex currently refreshes device.status about once a minute. Leave
-    // enough margin for scheduling jitter while still rejecting a stale HID
-    // mount promptly after the native session disappears.
-    constexpr uint32_t kCodexSessionIdleMs = 90000;
 
     while (true) {
         M5.update();
         hostlink::poll();
         companion_ble_service();
+        codex_micro::service();
+        service_staged_timeout();
         const bool pairing_is_active = companion_ble_pairing_active();
         if (pairing_is_active != pairing_was_active) {
             pairing_was_active = pairing_is_active;
             ui::set_pairing_pin(pairing_is_active, companion_ble_pairing_passkey());
         }
-        if (joystick_deflected
-            && static_cast<int32_t>(lgfx::millis() - joystick_release_ms) >= 0) {
-            companion_codex_joystick(0.f, 0.f);
+        if (joystick_deflected && static_cast<int32_t>(lgfx::millis() - joystick_release_ms) >= 0) {
+            codex_micro::send_joystick_to(joystick_transport, 0.f, 0.f);
             joystick_deflected = false;
+            joystick_transport = codex_micro::Transport::None;
         }
-
-        // Transport arbitration: a physical link becomes visible only after a
-        // valid native Codex RPC. USB wins while its HID interface is mounted;
-        // BLE remains paired and takes over when the cable disappears.
+        const auto active_transport = codex_micro::active_transport();
+        if ((voice_gesture.active || voice_gesture.agent_key_down) &&
+            active_transport != voice_gesture.transport)
+            release_voice_gesture();
         const model::Link previous_link = model::state.link;
-        const bool codex_session_alive = hostlink::silence_ms() <= kCodexSessionIdleMs;
-        const model::Link detected_link = !codex_session_alive ? model::Link::Offline
-                                        : companion_usb_connected() ? model::Link::Usb
-                                        : companion_ble_connected() ? model::Link::Ble
-                                        : model::Link::Offline;
+        const model::Link detected_link =
+            active_transport == codex_micro::Transport::Usb   ? model::Link::Usb
+            : active_transport == codex_micro::Transport::Ble ? model::Link::Ble
+                                                              : model::Link::Offline;
         const uint32_t link_now = lgfx::millis();
-        if (detected_link == model::Link::Offline
-            && previous_link != model::Link::Offline) {
+        if (detected_link == model::Link::Offline && previous_link != model::Link::Offline) {
             if (offline_since_ms == 0) {
                 offline_since_ms = link_now;
                 hostlink::sendf("CCP_LINK|offline_grace|start|ms=%u\n",
@@ -874,16 +1122,18 @@ extern "C" void app_main(void)
         }
         if (model::state.link != previous_link) {
             ui::invalidate();
-            if (previous_link == model::Link::Offline && model::state.link != model::Link::Offline) {
-                if (ui::screen() == ui::Screen::Boot) ui::go(ui::Screen::Deck);
-                else ui::toast("LINKED", model::state.link == model::Link::Usb ? "USB" : "Bluetooth", theme::kRun);
+            if (previous_link == model::Link::Offline &&
+                model::state.link != model::Link::Offline) {
+                if (ui::screen() == ui::Screen::Boot)
+                    ui::go(ui::Screen::Deck);
+                else
+                    ui::toast("LINKED", model::state.link == model::Link::Usb ? "USB" : "Bluetooth",
+                              theme::kRun);
                 publish_settings(false);
             } else if (model::state.link == model::Link::Offline) {
                 codex_micro::begin_session_sync();
-                if (voice_button_active) {
-                    voice_button_active = false;
-                    ui::set_voice_active(false, model::state.selected);
-                }
+                if (voice_gesture.active || voice_gesture.agent_key_down)
+                    release_voice_gesture();
                 ui::go(ui::Screen::Boot);
             }
         }
@@ -892,21 +1142,30 @@ extern "C" void app_main(void)
         // the Mac and attaches the transcription to its currently selected
         // chat; Cardputer stores no audio and does not need an SD card.
         if (M5.BtnA.wasPressed()) {
-            voice_button_active = false;
+            if (voice_gesture.active || voice_gesture.agent_key_down)
+                release_voice_gesture();
             if (!ui::wake()) {
-                char key[5]; std::snprintf(key, sizeof(key), "AG%02d", model::state.selected);
-                companion_codex_key(key, 1, model::state.selected);
-                voice_button_active = companion_codex_key("ACT10", 1, model::state.selected);
-                ui::set_voice_active(voice_button_active, model::state.selected);
-                hostlink::sendf("CCP_VOICE|press|slot=%d|sent=%d\n",
-                                model::state.selected, voice_button_active ? 1 : 0);
+                auto target = codex_micro::active_transport();
+                int agent = std::clamp(model::state.selected, 0, model::kMaxTasks - 1);
+                voice_gesture.transport = target;
+                voice_gesture.agent = agent;
+                voice_gesture.agent_key_down = send_agent_key_to(target, agent, true);
+                voice_gesture.active = codex_micro::send_key_to(target, "ACT10", 1, agent);
+                if (!voice_gesture.active && voice_gesture.agent_key_down) {
+                    send_agent_key_to(target, agent, false);
+                    voice_gesture.agent_key_down = false;
+                }
+                ui::set_voice_active(voice_gesture.active, agent);
+                hostlink::sendf("CCP_VOICE|press|slot=%d|transport=%s|sent=%d\n", agent,
+                                codex_micro::transport_name(target), voice_gesture.active ? 1 : 0);
             }
         }
-        if (M5.BtnA.wasReleased() && voice_button_active) {
-            companion_codex_key("ACT10", 0, model::state.selected);
-            hostlink::sendf("CCP_VOICE|release|slot=%d\n", model::state.selected);
-            voice_button_active = false;
-            ui::set_voice_active(false, model::state.selected);
+        if (M5.BtnA.wasReleased() && (voice_gesture.active || voice_gesture.agent_key_down)) {
+            int agent = voice_gesture.agent;
+            auto target = voice_gesture.transport;
+            release_voice_gesture();
+            hostlink::sendf("CCP_VOICE|release|slot=%d|transport=%s\n", agent,
+                            codex_micro::transport_name(target));
         }
 
         for (Press press = keys::next(); press.key != Key::None; press = keys::next()) {
@@ -929,7 +1188,7 @@ extern "C" void app_main(void)
         const uint32_t now = lgfx::millis();
         if (now - last_status_ms >= 5000) {
             last_status_ms = now;
-            model::state.battery  = M5.Power.getBatteryLevel();
+            model::state.battery = M5.Power.getBatteryLevel();
             model::state.charging = M5.Power.isCharging();
             ui::invalidate();
         }

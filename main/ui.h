@@ -27,8 +27,9 @@ void invalidate();
 
 // Renders a stable representative frame into the real display canvas and
 // returns its RGB565 pixels. Demo state is restored before this returns.
-// Supported scenes: splash, pairing, deck, recording, composer, settings,
-// debug. The pointer remains valid until the next UI render.
+// `live` returns the current framebuffer without changing state. Stable
+// representative scenes are splash, pairing, deck, recording, composer,
+// settings and debug. The pointer remains valid until the next UI render.
 const uint16_t* capture_frame(const char* scene);
 
 Screen screen();

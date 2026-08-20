@@ -20,6 +20,7 @@ struct Task {
     Status  status           = Status::Idle;
     bool    unseen_done      = false;  // completed since the user last looked
     bool    completion_hold  = false;  // keep a fresh completion green through debounce/animation
+    bool    locally_viewed_done = false; // selected/opened locally; stale green host frames must not revive it
     uint32_t color           = 0;
     float    brightness      = 0;
     float    effect_speed    = 0;
@@ -181,6 +182,17 @@ inline const Task* selected_task()
     if (index < 0) index = 0;
     if (index >= state.task_count) index = state.task_count - 1;
     return &state.tasks[index];
+}
+
+inline void mark_done_viewed(int slot)
+{
+    if (slot < 0 || slot >= state.task_count) return;
+    Task& task = state.tasks[slot];
+    if (task.status != Status::Done) return;
+    task.locally_viewed_done = true;
+    // A fresh completion remains green until its takeover has played. Existing
+    // unread completions become viewed as soon as Codex selects the slot.
+    if (!task.completion_hold) task.unseen_done = false;
 }
 
 }  // namespace model

@@ -73,7 +73,7 @@ index 505adcab..72a24496 100644
                  dev->devices[d].reports[r].report_type = rmap->reports[r].report_type;
                  dev->devices[d].reports[r].usage = rmap->reports[r].usage;
                  dev->devices[d].reports[r].value_len = rmap->reports[r].value_len;
-@@ -348,6 +360,49 @@ static hidd_le_report_item_t* find_report(uint8_t id, uint8_t type, uint8_t *mod
+@@ -348,6 +360,51 @@ static hidd_le_report_item_t* find_report(uint8_t id, uint8_t type, uint8_t *mod
      }
      return NULL;
  }
@@ -95,14 +95,16 @@ index 505adcab..72a24496 100644
 +        ESP_LOGE(TAG, "output report event allocation failed");
 +        return;
 +    }
-+    memcpy((uint8_t *)event + sizeof(esp_hidd_event_data_t), data, length);
++    uint8_t *payload = (uint8_t *)event + sizeof(esp_hidd_event_data_t);
++    memcpy(payload, data, length);
 +
 +    if (report_type == ESP_HID_REPORT_TYPE_OUTPUT) {
 +        event->output.dev = dev->dev;
 +        event->output.report_id = report_id;
 +        event->output.usage = report->usage;
 +        event->output.length = length;
-+        event->output.data = (uint8_t *)data;
++        /* esp_event copies event_size bytes but cannot relocate pointers. */
++        event->output.data = NULL;
 +        event->output.map_index = report->map_index;
 +        esp_event_post_to(dev->event_loop_handle, ESP_HIDD_EVENTS,
 +                          ESP_HIDD_OUTPUT_EVENT, event, event_size,
@@ -112,7 +114,7 @@ index 505adcab..72a24496 100644
 +        event->feature.report_id = report_id;
 +        event->feature.usage = report->usage;
 +        event->feature.length = length;
-+        event->feature.data = (uint8_t *)data;
++        event->feature.data = NULL; /* payload follows event inline */
 +        event->feature.map_index = report->map_index;
 +        esp_event_post_to(dev->event_loop_handle, ESP_HIDD_EVENTS,
 +                          ESP_HIDD_FEATURE_EVENT, event, event_size,

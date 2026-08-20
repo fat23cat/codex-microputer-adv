@@ -22,11 +22,14 @@ git -C "$IDF_PATH" checkout --detach "$IDF_TAG"
 git -C "$IDF_PATH" submodule update --init --recursive
 
 if [[ ! -d "$M5CARDPUTER_DEMO_PATH/.git" ]]; then
-    git clone --filter=blob:none https://github.com/m5stack/M5Cardputer-UserDemo.git \
+    git clone --filter=blob:none --recurse-submodules \
+        https://github.com/m5stack/M5Cardputer-UserDemo.git \
         "$M5CARDPUTER_DEMO_PATH"
 fi
 git -C "$M5CARDPUTER_DEMO_PATH" fetch --depth 1 origin "$M5CARDPUTER_COMMIT"
 git -C "$M5CARDPUTER_DEMO_PATH" checkout --detach "$M5CARDPUTER_COMMIT"
+git -C "$M5CARDPUTER_DEMO_PATH" submodule update --init --recursive
+python3 "$M5CARDPUTER_DEMO_PATH/fetch_repos.py"
 
 export IDF_PATH IDF_TOOLS_PATH M5CARDPUTER_DEMO_PATH
 "$IDF_PATH/install.sh" esp32s3

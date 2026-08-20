@@ -52,16 +52,19 @@ inline Result apply(model::Task& task, const LampFrame& frame, bool baseline = f
         task.lighting_interrupted = false;
     }
 
-    const bool host_unseen = task.status == model::Status::Done
-                          && task.color == 0x00ff4c;
     const bool fresh_completion = !baseline && task.seen
                                && result.before != model::Status::Done;
-    result.target_unseen = host_unseen;
     if (task.status != model::Status::Done) {
         task.unseen_done = false;
         task.completion_hold = false;
+        task.locally_viewed_done = false;
     } else {
-        if (fresh_completion) task.completion_hold = true;
+        if (fresh_completion) {
+            task.completion_hold = true;
+            task.locally_viewed_done = false;
+        }
+        const bool host_unseen = task.color == 0x00ff4c;
+        result.target_unseen = host_unseen && !task.locally_viewed_done;
         task.unseen_done = task.completion_hold ? true : result.target_unseen;
     }
 

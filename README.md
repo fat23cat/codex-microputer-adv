@@ -179,7 +179,8 @@ Run the host regression suite before every build:
 
 It covers the status reducer, announcement queue, animation continuity, HID
 framing, session synchronization, adaptive BLE power, keyboard mapping, display
-fade, and source-level safety contracts. GitHub Actions runs the same suite.
+fade, and source-level safety contracts. GitHub Actions runs the suite with
+sanitizers and also performs a clean, pinned ESP-IDF firmware build.
 The public-tree audit rejects common credential formats, private keys,
 machine-local home paths, hardware addresses, and ignored artifact directories.
 
@@ -214,10 +215,11 @@ capture one screen or the complete gallery:
 
 ```bash
 python3 tools/screenshot.py --scene deck --output screenshot.png
+python3 tools/screenshot.py --scene live --output current-screen.png
 python3 tools/screenshot.py --scene all --output screenshots
 ```
 
-Available scenes are `splash`, `pairing`, `deck`, `recording`, `composer`,
+Available scenes are `live`, `splash`, `pairing`, `deck`, `recording`, `composer`,
 `settings`, and `debug`. Screenshot traffic is USB-only and does not congest
 the native Codex BLE session. Demo task state exists only for the duration of
 the render and never replaces the live task list.

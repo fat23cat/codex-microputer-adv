@@ -1,15 +1,22 @@
 name: host-tests
-
-on:
-  push:
-  pull_request:
-
+on: [push, pull_request]
+concurrency:
+  group: host-tests-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   regression:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Audit publishable tree
-        run: ./tools/audit_public_tree.py
-      - name: Run firmware logic regressions
+      - uses: actions/checkout@v5
+      - run: ./tools/audit_public_tree.py
+      - name: Sanitized host regressions
+        env: { SANITIZE: "1" }
         run: ./tools/test.sh
+  firmware-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v5
+      - run: ./tools/setup.sh
+      - run: ./tools/build.sh
+      - run: test -s dist/Codex.bin

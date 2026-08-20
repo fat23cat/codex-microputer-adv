@@ -524,8 +524,8 @@ void init()
     ensure_speaker();
     prepare_sine_table();
     build_control_cues();
-    xTaskCreatePinnedToCore(synth_task, "status_synth", 4096, nullptr, 1,
-                            &synth_task_handle, 1);
+    const BaseType_t task_result = xTaskCreatePinnedToCore(synth_task, "status_synth", 4096, nullptr, 1, &synth_task_handle, 1);
+    if (task_result != pdPASS) { synth_task_handle = nullptr; std::printf("CCP_AUDIO|worker_start_failed|result=%ld\n", static_cast<long>(task_result)); }
 }
 
 void apply_volume()

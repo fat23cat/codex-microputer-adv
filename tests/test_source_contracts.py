@@ -64,17 +64,15 @@ require("main/key_layout.h",
         r"col >= 5 && col <= 10[\s\S]{0,80}Key::NativeAction, col \+ 1",
         "T through P must expose native command slots ACT06 through ACT11")
 require("main/main.cpp",
-        r"if \(!press\.down\)[\s\S]{0,350}Key::NativeAction[\s\S]{0,100}send_native_action\(press\.digit, false",
+        r"if \(!press\.down\)[\s\S]{0,700}Key::NativeAction[\s\S]{0,400}send_native_action_to\([\s\S]{0,180}false",
         "all native command slots must preserve their release edge")
 require("main/main.cpp",
-        r"if \(!press\.down\)[\s\S]{0,180}send_agent_key\(slot, false\)[\s\S]{0,15000}send_agent_key\(slot, true\)",
+        r"if \(!press\.down\)[\s\S]{0,400}send_agent_key_to\([\s\S]{0,160}false[\s\S]{0,20000}send_agent_key_to\([\s\S]{0,160}true",
         "agent keys must preserve down and up for native double tap")
 require("main/main.cpp",
-        r"press\.key == Key::EncoderPress[\s\S]{0,100}companion_codex_key\(\"ENC\", 0\)[\s\S]{0,5000}send_encoder_press\(\)",
+        r"Key::EncoderPress[\s\S]{0,320}send_key_to\([\s\S]{0,140}\"ENC\",\s*0[\s\S]{0,7000}send_encoder_press_to\(",
         "encoder release must remain physical so Codex can detect long press")
-require("main/ble_transport.cpp",
-        r"if \(companion_usb_connected\(\)\) return companion_usb_send_rpc",
-        "native USB must have exclusive priority over BLE")
+require("main/ble_transport.cpp", r"target == codex_micro::Transport::Usb[\s\S]{0,140}companion_usb_send_rpc", "native responses must remain bound to USB requester")
 require("main/ble_transport.cpp", r"kNativeAddresses\[3\]\[6\]",
         "three BLE host identities must exist")
 require("main/store.cpp", r'"ble_slot"',
@@ -86,15 +84,11 @@ require("main/main.cpp", r"companion_ble_select_profile\(profile\)",
         "settings must hot-switch the selected BLE profile")
 require("main/main.cpp", r"SettingsRow::BleProfile[\s\S]{0,500}(?!esp_restart)",
         "BLE profile settings must not restart the device")
-require("main/main.cpp",
-        r"companion_usb_connected\(\) \? model::Link::Usb[\s\S]{0,100}companion_ble_connected",
-        "visible link state must follow native USB then BLE")
+require("main/main.cpp", r"active_transport == codex_micro::Transport::Usb[\s\S]{0,220}codex_micro::Transport::Ble", "visible link state must follow source-aware native session")
 require("main/codex_micro_protocol.cpp",
         r"if \(!cJSON_IsString\(method\)\)[\s\S]{0,260}hostlink::note_host_activity\(\)",
         "a valid native Codex RPC must refresh the live session")
-require("main/main.cpp",
-        r"codex_session_alive\s*=\s*hostlink::silence_ms\(\)[\s\S]{0,220}!codex_session_alive\s*\?\s*model::Link::Offline",
-        "a mounted transport without a live Codex session must stay offline")
+require("main/codex_micro_protocol.cpp", r"usb_last_valid_ms[\s\S]{0,200}ble_last_valid_ms", "liveness must be tracked per transport")
 require("main/main.cpp",
         r"s\.link == model::Link::Offline[\s\S]{0,260}press\.key == Key::Settings[\s\S]{0,180}ui::Screen::Boot\s*:\s*ui::Screen::Settings",
         "Tab must toggle local settings from the offline splash")
@@ -142,14 +136,12 @@ require("main/usb_transport.cpp",
 require("main/main.cpp",
         r"DebugSettingsRow::UsbHid[\s\S]{0,600}companion_usb_set_enabled\(requested\)",
         "developer settings must control the USB HID transport")
-require("main/ble_transport.cpp",
-        r"if \(companion_usb_connected\(\)\) return companion_usb_send_rpc[\s\S]{0,180}return send_ble_rpc_body",
-        "BLE must remain the authoritative fallback while USB HID is disabled")
+require("main/ble_transport.cpp", r"target == codex_micro::Transport::Usb[\s\S]{0,260}target == codex_micro::Transport::Ble", "responses must use explicit transport routes")
 require("main/ble_transport.cpp",
         r"esp_hid_ble_gap_adv_init\(ESP_HID_APPEARANCE_KEYBOARD[\s\S]{0,450}sm_mitm\s*=\s*1;[\s\S]{0,100}sm_io_cap\s*=\s*BLE_HS_IO_DISPLAY_ONLY",
         "BLE pairing policy must be applied after helper defaults with authenticated display PIN")
 require("main/ble_transport.cpp",
-        r"constexpr auto kReportMap[\s\S]{0,180}0x05,0x01,0x09,0x06[\s\S]{0,500}0x06,0x00,0xFF[\s\S]{0,250}0x85,0x06",
+        r"constexpr auto kReportMap[\s\S]{0,260}0x05,\s*0x01,\s*0x09,\s*0x06[\s\S]{0,700}0x06,\s*0x00,\s*0xFF[\s\S]{0,350}0x85,\s*0x06",
         "BLE HID map must expose the complete Codex Micro keyboard and vendor RPC collections")
 require("main/ui.cpp",
         r"void draw_pairing_takeover\(\)[\s\S]{0,1500}ENTER PIN ON MAC",
@@ -163,9 +155,7 @@ require("main/ble_transport.cpp",
 require("main/ble_transport.cpp",
         r"BLE_GAP_EVENT_ENC_CHANGE[\s\S]{0,180}pairing_active\.store\(false",
         "successful encryption must dismiss the pairing PIN")
-require("main/ble_transport.cpp",
-        r"ESP_HIDD_OUTPUT_EVENT[\s\S]{0,400}pairing_active\.store\(false[\s\S]{0,100}codex_micro::receive_report",
-        "the first native Codex report must dismiss a stale pairing overlay")
+require("main/ble_transport.cpp", r"ESP_HIDD_OUTPUT_EVENT[\s\S]{0,700}codex_micro::enqueue_report", "BLE callback must enqueue immutable protocol input")
 require("main/ble_transport.cpp",
         r"ble_gap_conn_rssi[\s\S]{0,1100}adaptive_ble::next_tier",
         "connected BLE power must adapt to measured RSSI")
@@ -194,13 +184,22 @@ require("main/ui.cpp",
         r"ble_signal_weak[\s\S]{0,500}fill_rect\(badge_x, badge_y, badge_w, badge_h, kInk\)[\s\S]{0,180}LOW SIGNAL",
         "weak BLE must use a compact dark text badge rather than an icon")
 require("tools/install.py",
-        r'--after", "no_reset"[\s\S]{0,500}select_ota_partition\(args\.port, label, args\.baud\)[\s\S]{0,100}installed and launched',
+        r"select_ota\(a\.port,\s*label,\s*\"115200\"\)[\s\S]{0,180}installed and launched",
         "M5Apps installer must select and launch the flashed OTA app without a manual picker")
 require("main/codex_micro_protocol.cpp",
         r"status_reducer::apply\(\s*task, frame, session\.baseline\(\)\)",
         "all status snapshots during control-plane bootstrap must be baseline-only")
 require("main/codex_micro_protocol.cpp",
-        r"if \(apply_thread_lights\(params\)\)\s*session\.note\(session_sync::Method::ThreadStatus\)",
+        r"task\.status == model::Status::Done[\s\S]{0,120}id->valueint == model::state\.selected[\s\S]{0,160}mark_done_viewed",
+        "a completion in the synchronized selected slot must settle to viewed even after its lamp loses breath")
+require("main/main.cpp",
+        r"s\.selected = selected_hint[\s\S]{0,320}mark_done_viewed\(s\.selected\)",
+        "diagnostic task batches must use the same selected-completion read contract")
+require("main/main.cpp",
+        r"before->status != model::Status::Done[\s\S]{0,420}staged\[i\]\.color = 0x00ff4c",
+        "diagnostic fresh completions must retain native unread green")
+require("main/codex_micro_protocol.cpp",
+        r"if\s*\([\s\S]{0,160}apply_thread_lights\([\s\S]{0,160}\)[\s\S]{0,360}session_sync::Method::ThreadStatus",
         "all-off and picker preview frames must not complete session baseline")
 require("main/ui.cpp",
         r"current == Screen::Boot && !transition\.running\(\)[\s\S]{0,180}display_fade::apply",
@@ -212,7 +211,7 @@ require("main/ui.cpp",
         r"Status::Done\)\s+return t\.unseen_done \? kInk : kIdleDigit[\s\S]{0,300}Status::Done && !t\.unseen_done",
         "viewed completed tasks must use the inactive grey digit scale")
 require("main/main.cpp",
-        r"had_preview[\s\S]{0,120}dismiss_composer_control_preview[\s\S]{0,100}else ui::allow_composer_control_preview",
+        r"had_preview[\s\S]{0,180}dismiss_composer_control_preview[\s\S]{0,160}else\s+ui::allow_composer_control_preview",
         "encoder press must explicitly toggle the composer control overlay")
 require("main/ui.cpp",
         r"dismiss_composer_control_preview\(\)[\s\S]{0,180}suppressed_until_ms = lgfx::millis\(\) \+ 5000",
@@ -224,8 +223,20 @@ require("main/ui.cpp",
         r"now - lighting_changed_ms >= kDimHoldMs[\s\S]{0,180}configured / 10",
         "host auto-dim must use the same three-minute readable hold")
 
+require("main/codex_micro_protocol.cpp", r"rpc_framer::Assembler usb_input;[\s\S]{0,120}rpc_framer::Assembler ble_input;", "USB and BLE must not share partial RPC state")
+require("main/codex_micro_protocol.cpp", r"xQueueCreateStatic[\s\S]{0,1200}xQueueReceive", "protocol callbacks must hand reports to main task")
+forbid("main/ble_store_apps_nvs.cpp", r"nvs_erase_all\(", "BLE migration must never erase user settings")
+require("main/store.cpp", r"settings_dirty = false[\s\S]{0,260}settings_dirty = true", "failed settings writes must remain dirty")
+require("main/input_event_queue.h", r"if \(repeat \|\| !is_release\(item\)\)\s+return false", "release edges must survive queue pressure")
+require("main/keys.cpp", r"is_adv[\s\S]{0,300}Backend::None", "ADV TCA failure must not drive legacy matrix pins")
+require("main/main.cpp", r"send_agent_key_to\(voice_gesture.transport[\s\S]{0,160}false", "G0 must release Agent Key on original transport")
+require("main/link.cpp", r"discard_until_newline", "oversized diagnostic lines must be discarded through newline")
+require("tools/install.py", r"partition table backup[\s\S]{0,3000}verification failed", "partition edits must be backed up and verified")
+require("main/ui.cpp", r"strcmp\(scene, \"live\"\)[\s\S]{0,120}canvas\.getBuffer", "live screenshots must expose the current framebuffer without demo-state mutation")
+require(".github/workflows/host-tests.yml", r"SANITIZE[\s\S]{0,900}firmware-build", "CI must run sanitizers and firmware build")
+
 if failures:
     for failure in failures:
         print(f"FAIL source_contracts: {failure}", file=sys.stderr)
     raise SystemExit(1)
-print("PASS source_contracts (68 invariants)")
+print("PASS source_contracts")

@@ -9,7 +9,7 @@ namespace status_animation {
 inline bool lamp_is_viewed(const model::Task* task)
 {
     return task && task->status == model::Status::Done
-        && task->color == 0xffffff;
+        && (task->color == 0xffffff || task->locally_viewed_done);
 }
 
 inline float viewed_fade_progress(bool requested, const model::Task* task,

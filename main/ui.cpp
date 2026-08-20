@@ -1338,6 +1338,8 @@ void invalidate() { dirty = true; }
 const uint16_t* capture_frame(const char* scene)
 {
     if (!canvas_ready || !scene) return nullptr;
+    if (std::strcmp(scene, "live") == 0)
+        return static_cast<const uint16_t*>(canvas.getBuffer());
 
     // Capture scenes borrow the production renderer. Save every value they
     // touch so a screenshot cannot change the selected task or leave a modal
@@ -1802,7 +1804,8 @@ void service()
                 // Finish on the lamp colour visible in Codex now, not on the
                 // read state captured before debounce and the animation.
                 model::state.tasks[slot].unseen_done =
-                    model::state.tasks[slot].color == 0x00ff4c;
+                    model::state.tasks[slot].color == 0x00ff4c
+                    && !model::state.tasks[slot].locally_viewed_done;
                 model::state.tasks[slot].completion_hold = false;
             }
             announce_fade_to_viewed = false;

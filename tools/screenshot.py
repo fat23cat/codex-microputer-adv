@@ -13,6 +13,7 @@ import time
 import zlib
 
 SCENES = ("splash", "pairing", "deck", "recording", "composer", "settings", "debug")
+CAPTURE_CHOICES = ("live", *SCENES)
 
 
 def find_port() -> str:
@@ -113,7 +114,7 @@ def capture(port: str, scene: str, timeout: float = 12.0) -> tuple[int, int, lis
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", help="USB serial device; auto-detected by default")
-    parser.add_argument("--scene", choices=(*SCENES, "all"), default="deck")
+    parser.add_argument("--scene", choices=(*CAPTURE_CHOICES, "all"), default="deck")
     parser.add_argument("--output", type=pathlib.Path, default=pathlib.Path("screenshots"))
     args = parser.parse_args()
     port = args.port or find_port()

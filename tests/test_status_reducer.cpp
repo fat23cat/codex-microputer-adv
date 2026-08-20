@@ -11,13 +11,13 @@ int failures = 0;
 
 void check(bool condition, const char* name)
 {
-    if (condition) return;
+    if (condition)
+        return;
     ++failures;
     std::cerr << "FAIL status_reducer: " << name << '\n';
 }
 
-status_reducer::LampFrame lamp(uint32_t color, uint8_t effect = 1,
-                               float brightness = 1.f)
+status_reducer::LampFrame lamp(uint32_t color, uint8_t effect = 1, float brightness = 1.f)
 {
     return {color, brightness, 0.f, effect};
 }
@@ -83,14 +83,44 @@ void latest_lamp_color_remains_authoritative()
     model::Task task;
     status_reducer::apply(task, lamp(0x304ffe));
     status_reducer::apply(task, lamp(0x00ff4c));
-    task.completion_hold = false;  // animation finalizer
+    task.completion_hold = false; // animation finalizer
     status_reducer::apply(task, lamp(0x00ff4c));
     check(task.unseen_done, "green remains green after animation");
     status_reducer::apply(task, lamp(0xffffff));
     check(!task.unseen_done, "white becomes viewed after hold release");
 }
 
-}  // namespace
+void selected_completion_stays_viewed_despite_stale_green_lamp()
+{
+    model::state = model::State{};
+    model::state.task_count = 1;
+    auto& task = model::state.tasks[0];
+    status_reducer::apply(task, lamp(0x304ffe));
+    status_reducer::apply(task, lamp(0x00ff4c));
+    model::mark_done_viewed(0);
+    check(task.unseen_done, "selected fresh completion stays green during animation");
+    check(task.locally_viewed_done, "selected completion records local view");
+
+    task.completion_hold = false; // animation finalizer
+    status_reducer::apply(task, lamp(0x00ff4c));
+    check(!task.unseen_done, "stale green frame cannot revive viewed completion");
+
+    status_reducer::apply(task, lamp(0x304ffe));
+    check(!task.locally_viewed_done, "new work resets local viewed latch");
+}
+
+void selecting_existing_unread_completion_marks_it_viewed()
+{
+    model::state = model::State{};
+    model::state.task_count = 1;
+    auto& task = model::state.tasks[0];
+    status_reducer::apply(task, lamp(0x00ff4c));
+    check(task.unseen_done, "background completion starts unread");
+    model::mark_done_viewed(0);
+    check(!task.unseen_done, "selecting unread completion marks it viewed");
+}
+
+} // namespace
 
 int main()
 {
@@ -99,7 +129,10 @@ int main()
     fresh_completion_holds_green_until_animation_finishes();
     repeated_and_restored_frames_are_silent();
     latest_lamp_color_remains_authoritative();
-    if (failures) return EXIT_FAILURE;
-    std::cout << "PASS status_reducer (5 scenarios)\n";
+    selected_completion_stays_viewed_despite_stale_green_lamp();
+    selecting_existing_unread_completion_marks_it_viewed();
+    if (failures)
+        return EXIT_FAILURE;
+    std::cout << "PASS status_reducer (7 scenarios)\n";
     return EXIT_SUCCESS;
 }

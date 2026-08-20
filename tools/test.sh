@@ -1,18 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
-test_tmp="$(mktemp -d "${TMPDIR:-/tmp}/codex-companion-tests.XXXXXX")"
-trap 'rm -rf "$test_tmp"' EXIT
-
-compiler="${CXX:-c++}"
-for source in "$repo_dir"/tests/test_*.cpp; do
-  name="$(basename "$source" .cpp)"
-  "$compiler" -std=c++17 -Wall -Wextra -Werror -pedantic \
-    -I"$repo_dir/main" "$source" -o "$test_tmp/$name"
-  "$test_tmp/$name"
-done
-
-python3 "$repo_dir/tests/test_source_contracts.py"
-python3 "$repo_dir/tests/test_screenshot_tool.py"
+repo_dir="$(cd "$(dirname "$0")/.." && pwd)";tmp="$(mktemp -d)";trap 'rm -rf "$tmp"' EXIT
+compiler="${CXX:-c++}";flags=(-std=c++17 -Wall -Wextra -Werror -pedantic -I"$repo_dir/main")
+if [[ "${SANITIZE:-0}" == "1" ]];then flags+=(-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined);fi
+for source in "$repo_dir"/tests/test_*.cpp;do name="$(basename "$source" .cpp)";"$compiler" "${flags[@]}" "$source" -o "$tmp/$name";"$tmp/$name";done
+export PYTHONDONTWRITEBYTECODE=1;python3 -m py_compile "$repo_dir"/tools/*.py "$repo_dir"/tests/*.py
+for source in "$repo_dir"/tests/test_*.py;do python3 "$source";done
 echo "PASS all host tests"
