@@ -104,6 +104,24 @@ require("main/audio.cpp",
 require("main/audio.cpp",
         r"CCP_CHIME_READY[\s\S]{0,500}playing_buffer\.store\(0,[\s\S]{0,160}playRaw\(status_pcm\[0\]",
         "startup chime buffer must be reserved before speaker DMA can consume it")
+require("main/audio.cpp",
+        r"kStatusChannel\s*=\s*0[\s\S]{0,80}kInterfaceChannel\s*=\s*1",
+        "status and interface sounds must use separate hardware mixer channels")
+require("main/audio.cpp",
+        r"void thock\(\)[\s\S]{0,520}kInterfaceChannel, true",
+        "button cues must stay on the interface channel")
+require("main/audio.cpp",
+        r"void play_control[\s\S]{0,260}kInterfaceChannel, true",
+        "control cues must stay on the interface channel")
+forbid("main/audio.cpp",
+       r"void thock\(\)[\s\S]{0,420}Speaker\.stop\(\)|void play_control[\s\S]{0,220}Speaker\.stop\(\)",
+       "interface cues must not globally stop an in-flight status score")
+require("main/audio.cpp",
+        r"bool play_prepared_status\(\)[\s\S]{0,900}retry=channel_busy[\s\S]{0,260}armed_buffer\.store\(-1",
+        "status playback must retain its armed buffer until playRaw succeeds")
+require("main/ui.cpp",
+        r"if \(audio::play_prepared_status\(\)\)\s*announce_audio_armed = false",
+        "the UI must retry an unaccepted prepared status score")
 require("main/model.h", r"sound_volume\s*=\s*60;[\s\S]{0,80}unmuted_volume\s*=\s*60;[\s\S]{0,120}startup_chime\s*=\s*3;",
         "clean settings must default to original 60% volume and CLOUD")
 require("main/store.cpp", r'"volume_v4"', "restored original volume scale must use a fresh NVS key")

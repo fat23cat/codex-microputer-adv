@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.5 — 2026-08-21
+
+- Moved long status scores and short interface cues onto separate hardware
+  mixer channels so navigation cannot cut off notifications.
+- Retained and retried an armed status buffer when the speaker temporarily
+  cannot accept it instead of silently advancing the animation.
+
 ## 0.4.4 — 2026-08-21
 
 - Made selected-completion read state self-healing on every native status

@@ -50,6 +50,8 @@ void ensure_speaker()
 // of contact. Depth here is mostly the envelope and the octave pairing, not the
 // fundamental, because almost nothing below 200 Hz leaves a case this size.
 constexpr uint32_t kCueRate   = 16000;
+constexpr int kStatusChannel = 0;
+constexpr int kInterfaceChannel = 1;
 constexpr size_t   kThockLen  = 1280;  // 80 ms: tactile, with no synthetic tail
 int16_t thock_pcm[kThockLen]  = {};
 constexpr size_t kControlLen = 1760;  // 110 ms, short but recognisably melodic
@@ -147,13 +149,13 @@ void thock()
 {
     ensure_speaker();
     if (!speaker_live) return;
-    // Stop before rebuilding: the buffer we are about to overwrite is the one the
-    // DMA is still reading from if a press lands during the previous knock.
-    M5.Speaker.stop();
+    // Interface sounds own channel 1. Replacing a previous knock must never
+    // stop the status score playing concurrently on channel 0.
     build_thock(variant);
     variant = (variant + 1) % kVariants;
     // Cut any cue still ringing: two knocks overlapping sound like a rattle.
-    M5.Speaker.playRaw(thock_pcm, kThockLen, kCueRate, false, 1, -1, true);
+    M5.Speaker.playRaw(thock_pcm, kThockLen, kCueRate, false, 1,
+                       kInterfaceChannel, true);
 }
 
 void build_control_cues()
@@ -192,9 +194,8 @@ void play_control(int index)
 {
     ensure_speaker();
     if (!speaker_live) return;
-    M5.Speaker.stop();
     M5.Speaker.playRaw(control_pcm[index], kControlLen, kCueRate,
-                       false, 1, -1, true);
+                       false, 1, kInterfaceChannel, true);
 }
 
 bool build_status_gesture(Cue cue, int16_t* output)
@@ -509,7 +510,8 @@ void boot_music()
     // score is still playing; without this marker the status worker also chose
     // buffer 0 and replaced CLOUD in flight, reducing it to a DUO-like fragment.
     playing_buffer.store(0, std::memory_order_release);
-    M5.Speaker.playRaw(status_pcm[0], kBootLen, kCueRate, false, 1, -1, true);
+    M5.Speaker.playRaw(status_pcm[0], kBootLen, kCueRate, false, 1,
+                       kStatusChannel, true);
 }
 
 }  // namespace
@@ -562,14 +564,29 @@ bool arm_status(Cue cue, uint32_t token)
     return true;
 }
 
-void play_prepared_status()
+bool play_prepared_status()
 {
-    const int target = armed_buffer.exchange(-1, std::memory_order_acq_rel);
-    if (target < 0 || !speaker_live || model::state.sound_volume == 0) return;
+    const int target = armed_buffer.load(std::memory_order_acquire);
+    if (target < 0) return true;
+    if (model::state.sound_volume == 0) {
+        armed_buffer.store(-1, std::memory_order_release);
+        return true;
+    }
+    ensure_speaker();
+    if (!speaker_live) {
+        std::printf("CCP_AUDIO_PLAY|retry=speaker_unavailable\n");
+        return false;
+    }
+    if (!M5.Speaker.playRaw(status_pcm[target], kStatusLen, kStatusRate,
+                            false, 1, kStatusChannel, true)) {
+        std::printf("CCP_AUDIO_PLAY|retry=channel_busy|buffer=%d\n", target);
+        return false;
+    }
+    armed_buffer.store(-1, std::memory_order_release);
     playing_buffer.store(static_cast<int8_t>(target), std::memory_order_release);
-    std::printf("CCP_AUDIO_PLAY|buffer=%d|core=%d\n", target, xPortGetCoreID());
-    M5.Speaker.playRaw(status_pcm[target], kStatusLen, kStatusRate,
-                       false, 1, -1, true);
+    std::printf("CCP_AUDIO_PLAY|buffer=%d|channel=%d|core=%d\n",
+                target, kStatusChannel, xPortGetCoreID());
+    return true;
 }
 
 void play(Cue cue)

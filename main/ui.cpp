@@ -1276,8 +1276,8 @@ void render()
     // The LCD has accepted the first animation frame. Only now wake the speaker
     // task, so audio can never become audible before the visual response.
     if (announce_audio_armed && announce_age >= kAnnounceRailOut) {
-        announce_audio_armed = false;
-        audio::play_prepared_status();
+        if (audio::play_prepared_status())
+            announce_audio_armed = false;
     }
     // Present one complete resting deck frame while its colour clock is still
     // frozen. Releasing before pushSprite made the rail background jump on the

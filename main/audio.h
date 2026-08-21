@@ -33,7 +33,9 @@ const char* startup_chime_name(uint8_t index);
 void request_status(Cue cue, uint32_t token);
 bool status_ready(Cue cue, uint32_t token);
 bool arm_status(Cue cue, uint32_t token);
-void play_prepared_status();
+// Returns false when the speaker could not accept the prepared buffer yet; the
+// caller must retry without advancing the audio edge.
+bool play_prepared_status();
 
 // No-op when the user has muted the device.
 void play(Cue cue);
