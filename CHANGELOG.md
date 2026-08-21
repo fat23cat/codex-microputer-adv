@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3 — 2026-08-21
+
+- Fixed selected tasks remaining unread green when they complete during the
+  short local-selection guard window.
+
 ## 0.4.2 — 2026-08-21
 
 - Hardened native USB/BLE session ownership so one gesture cannot cross hosts

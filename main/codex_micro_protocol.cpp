@@ -251,8 +251,12 @@ bool apply_thread_lights(cJSON* params, session_sync::Tracker& session)
             // selection. Use the cursor we already synchronized while the task
             // was running: the completion animation remains green because of
             // completion_hold, then settles to viewed grey.
-            if (!selection_guarded() && task.status == model::Status::Done &&
-                id->valueint == model::state.selected) {
+            // The selection guard only suppresses host-to-device cursor
+            // inference while a local selection settles. It must never hide a
+            // completion of the slot that is already selected locally: fast
+            // tasks can finish inside that guard window and would otherwise
+            // remain unread green forever.
+            if (task.status == model::Status::Done && id->valueint == model::state.selected) {
                 model::mark_done_viewed(id->valueint);
                 std::printf("CCP_NATIVE|selected_completion_viewed|%d\n", id->valueint);
             }

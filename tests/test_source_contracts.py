@@ -190,8 +190,11 @@ require("main/codex_micro_protocol.cpp",
         r"status_reducer::apply\(\s*task, frame, session\.baseline\(\)\)",
         "all status snapshots during control-plane bootstrap must be baseline-only")
 require("main/codex_micro_protocol.cpp",
-        r"task\.status == model::Status::Done[\s\S]{0,120}id->valueint == model::state\.selected[\s\S]{0,160}mark_done_viewed",
-        "a completion in the synchronized selected slot must settle to viewed even after its lamp loses breath")
+        r"if \(task\.status == model::Status::Done &&\s*id->valueint == model::state\.selected\)[\s\S]{0,120}mark_done_viewed",
+        "selected completion must settle viewed even during the local selection guard")
+forbid("main/codex_micro_protocol.cpp",
+       r"selection_guarded\(\)\s*&&\s*task\.status == model::Status::Done",
+       "selection guard must not suppress selected completion read state")
 require("main/main.cpp",
         r"s\.selected = selected_hint[\s\S]{0,320}mark_done_viewed\(s\.selected\)",
         "diagnostic task batches must use the same selected-completion read contract")
