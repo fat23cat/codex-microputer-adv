@@ -8,6 +8,11 @@
 #include "esp_log.h"
 namespace hostlink {
 namespace {
+// Line reassembly buffer for the USB serial diagnostic protocol. Lines of 512
+// or more bytes are dropped whole until the next newline (reason=oversize).
+// Contract: a well-formed OPT| line with eight options (kLabelMax=10,
+// kWireMax=40) peaks near 450 bytes, and TASK titles are truncated to
+// kTitleMax by the parser, so conforming hosts always fit.
 char rx[512] = {};
 size_t rx_length = 0;
 bool discard_until_newline = false;

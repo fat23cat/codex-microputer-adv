@@ -1,5 +1,6 @@
-// NimBLE GATT transport: one service with an RX write characteristic and a TX
-// notify characteristic, carrying the same newline-delimited protocol as USB.
+// BLE HID transport for the native Codex Micro protocol: keyboard plus a
+// vendor RPC report collection. There is no newline-delimited text channel
+// over BLE; diagnostic text lives only on the USB serial path (link.h).
 #pragma once
 
 #include <cstddef>
@@ -26,8 +27,6 @@ bool companion_codex_joystick(float angle, float distance);
 void companion_ble_service(void);
 
 // Implemented in main.cpp.
-void companion_receive_line(const char* line);
-void companion_transport_activity(void);
 void companion_ble_link_changed(bool connected);
 
 #ifdef __cplusplus

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.7 — 2026-08-21
+
+- Made the firmware version single-sourced from the build: `PROJECT_VER` in
+  the root CMakeLists now feeds `CCP_HELLO`, `CCP_PONG`, and the OTA app
+  descriptor, which had drifted apart.
+- Discarded any pending diagnostic task batch when a new host session opens
+  (`HOST|`), so a stale partial batch can no longer merge into the next deck,
+  and made mid-batch slot overwrites observable without dropping the batch.
+- Flushed pending settings before returning to M5Apps and verified the
+  rollback flush when disabling USB HID fails, so neither path can lose the
+  last change or resurrect a disabled mode after reboot.
+- Stopped rewriting settings NVS on every host `CFG|`/`OPT|` exchange; those
+  values are host-owned and were never persisted anyway.
+- Replaced scattered host lamp colour literals with the byte-exact named
+  constants in `main/lamp.h`.
+- Removed dead BLE text-channel entry points that never had callers.
+
 ## 0.4.6 — 2026-08-21
 
 - Treat the first Codex lighting snapshot as restored state, so reconnecting or

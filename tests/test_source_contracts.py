@@ -226,8 +226,14 @@ require("main/main.cpp",
         r"s\.selected = selected_hint[\s\S]{0,320}mark_done_viewed\(s\.selected\)",
         "diagnostic task batches must use the same selected-completion read contract")
 require("main/main.cpp",
-        r"before->status != model::Status::Done[\s\S]{0,420}staged\[i\]\.color = 0x00ff4c",
+        r"before->status != model::Status::Done[\s\S]{0,420}staged\[i\]\.color = lamp::kDoneUnseen",
         "diagnostic fresh completions must retain native unread green")
+require("main/lamp.h",
+        r"kRunning\s*=\s*0x304ffe[\s\S]{0,400}kError\s*=\s*0xff0033",
+        "host lamp wire colours must stay byte-exact in lamp.h")
+require("main/main.cpp",
+        r'strncmp\(line, "HOST\|", 5\)[\s\S]{0,460}reset_staged_tasks',
+        "a new host session must discard any pending diagnostic batch")
 require("main/codex_micro_protocol.cpp",
         r"if\s*\([\s\S]{0,160}apply_thread_lights\([\s\S]{0,160}\)[\s\S]{0,360}session_sync::Method::ThreadStatus",
         "all-off and picker preview frames must not complete session baseline")
@@ -261,6 +267,10 @@ require("main/input_event_queue.h", r"if \(repeat \|\| !is_release\(item\)\)\s+r
 require("main/keys.cpp", r"is_adv[\s\S]{0,300}Backend::None", "ADV TCA failure must not drive legacy matrix pins")
 require("main/main.cpp", r"send_agent_key_to\(voice_gesture.transport[\s\S]{0,160}false", "G0 must release Agent Key on original transport")
 require("main/link.cpp", r"discard_until_newline", "oversized diagnostic lines must be discarded through newline")
+forbid("main/ble_transport.h", r"companion_receive_line",
+       "the BLE text-channel entry point must stay removed until a GATT text characteristic exists")
+require("main/main.cpp", r"store::flush\(\);\s*\n\s*vTaskDelay\(pdMS_TO_TICKS\(120\)\)",
+        "returning to M5Apps must flush debounced settings before reboot")
 require("tools/install.py", r"partition table backup[\s\S]{0,3000}verification failed", "partition edits must be backed up and verified")
 require("main/ui.cpp", r"strcmp\(scene, \"live\"\)[\s\S]{0,120}canvas\.getBuffer", "live screenshots must expose the current framebuffer without demo-state mutation")
 require(".github/workflows/host-tests.yml", r"SANITIZE[\s\S]{0,900}firmware-build", "CI must run sanitizers and firmware build")

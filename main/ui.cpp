@@ -10,6 +10,7 @@
 
 #include "audio.h"
 #include "display_fade.h"
+#include "lamp.h"
 #include "model.h"
 #include "motion.h"
 #include "status_animation.h"
@@ -1804,7 +1805,7 @@ void service()
                 // Finish on the lamp colour visible in Codex now, not on the
                 // read state captured before debounce and the animation.
                 model::state.tasks[slot].unseen_done =
-                    model::state.tasks[slot].color == 0x00ff4c
+                    model::state.tasks[slot].color == lamp::kDoneUnseen
                     && !model::state.tasks[slot].locally_viewed_done;
                 model::state.tasks[slot].completion_hold = false;
             }

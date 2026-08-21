@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "lamp.h"
 #include "model.h"
 
 namespace status_reducer {
@@ -39,11 +40,11 @@ inline Result apply(model::Task& task, const LampFrame& frame, bool baseline = f
 
     model::Status incoming = result.before;
     result.semantic = task.present;
-    if (task.color == 0x304ffe) incoming = model::Status::Running;
-    else if (task.color == 0x00ff4c || task.color == 0xffffff)
+    if (task.color == lamp::kRunning) incoming = model::Status::Running;
+    else if (task.color == lamp::kDoneUnseen || task.color == lamp::kDoneSeen)
         incoming = model::Status::Done;
-    else if (task.color == 0xff6d00) incoming = model::Status::NeedsInput;
-    else if (task.color == 0xff0033) incoming = model::Status::Error;
+    else if (task.color == lamp::kNeedsInput) incoming = model::Status::NeedsInput;
+    else if (task.color == lamp::kError) incoming = model::Status::Error;
     else result.semantic = false;
 
     result.restoration = result.semantic && task.lighting_interrupted;
@@ -72,7 +73,7 @@ inline Result apply(model::Task& task, const LampFrame& frame, bool baseline = f
             task.completion_hold = true;
             task.locally_viewed_done = false;
         }
-        const bool host_unseen = task.color == 0x00ff4c;
+        const bool host_unseen = task.color == lamp::kDoneUnseen;
         result.target_unseen = host_unseen && !task.locally_viewed_done;
         task.unseen_done = task.completion_hold ? true : result.target_unseen;
     }

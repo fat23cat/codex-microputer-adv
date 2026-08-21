@@ -113,7 +113,9 @@ struct State {
 
     // Pending status takeovers. One slot owns at most one pending event: a new
     // state for that slot replaces stale news, while different slots preserve
-    // arrival order and are presented one by one.
+    // arrival order and are presented one by one. Because slots are unique in
+    // the queue and only six slots exist, the count can never exceed six; the
+    // append guard below is therefore unreachable for valid slots.
     Announcement announcements[6] = {};
     uint8_t announcement_count = 0;
 };

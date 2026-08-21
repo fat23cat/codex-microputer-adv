@@ -28,6 +28,7 @@
 #include "esp_partition.h"
 #include "esp_system.h"
 #include "esp_vfs_fat.h"
+#include "lamp.h"
 #include "link.h"
 #include "model.h"
 #include "nvs_flash.h"
@@ -42,7 +43,13 @@ State state;
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.4.2";
+// The root CMakeLists.txt PROJECT_VER is the single source of truth; the OTA
+// app descriptor carries it as `version`, so the diagnostic protocol, the
+// boot probe and the flashed image can never disagree.
+const char* firmware_version()
+{
+    return esp_app_get_description()->version;
+}
 
 model::Task staged[model::kMaxTasks];
 bool staged_present[model::kMaxTasks] = {};
@@ -167,13 +174,13 @@ uint32_t diagnostic_color(model::Status status)
 {
     switch (status) {
     case model::Status::Running:
-        return 0x304ffe;
+        return lamp::kRunning;
     case model::Status::NeedsInput:
-        return 0xff6d00;
+        return lamp::kNeedsInput;
     case model::Status::Done:
-        return 0xffffff;
+        return lamp::kDoneSeen;
     case model::Status::Error:
-        return 0xff0033;
+        return lamp::kError;
     case model::Status::Idle:
         return 0;
     }
@@ -383,7 +390,7 @@ void commit_tasks(int selected_hint)
                 // TASK has no separate lamp frame. Use the native unread
                 // completion colour so the animation finalizer can preserve
                 // background unread state and settle a selected task locally.
-                staged[i].color = 0x00ff4c;
+                staged[i].color = lamp::kDoneUnseen;
                 ++newly_done;
                 if (!headline)
                     headline = staged[i].title;
@@ -459,6 +466,8 @@ void return_to_m5apps()
     const esp_err_t err = esp_ota_set_boot_partition(factory);
     hostlink::emit("return_to_m5apps", err == ESP_OK, esp_err_to_name(err));
     if (err == ESP_OK) {
+        // Settings changed within the write debounce would otherwise be lost.
+        store::flush();
         vTaskDelay(pdMS_TO_TICKS(120));
         esp_restart();
     }
@@ -594,8 +603,13 @@ void handle_press(const Press& press)
                 }
                 if (!companion_usb_set_enabled(requested)) {
                     s.usb_hid_enabled = !requested;
-                    store::flush();
-                    ui::toast("USB HID ERROR", "State unchanged", theme::kError);
+                    // The rollback itself must land in NVS, or a reboot would
+                    // resurrect the mode whose activation just failed.
+                    if (!store::flush())
+                        ui::toast("SETTINGS ERROR", "USB preference not saved",
+                                  theme::kError);
+                    else
+                        ui::toast("USB HID ERROR", "State unchanged", theme::kError);
                 } else {
                     ui::toast(requested ? "USB HID ON" : "BLUETOOTH ONLY",
                               requested ? "Codex Micro enabled" : "USB data disabled",
@@ -850,7 +864,7 @@ void handle_line(char* line)
     ui::wake();
 
     if (std::strcmp(line, "PING") == 0) {
-        sendf("CCP_PONG|%s\n", kFirmwareVersion);
+        sendf("CCP_PONG|%s\n", firmware_version());
         return;
     }
     if (std::strncmp(line, "SCREENSHOT|", 11) == 0) {
@@ -862,6 +876,13 @@ void handle_line(char* line)
         return;
     }
     if (std::strncmp(line, "HOST|", 5) == 0) {
+        // A new host session owns the deck from scratch. Discarding any
+        // pending diagnostic batch here keeps a stale partial batch from
+        // merging with the next one, whatever slot it starts at.
+        if (staged_started_ms) {
+            sendf("CCP_DECK|WARN|batch_reset_by_host\n");
+            reset_staged_tasks();
+        }
         std::snprintf(model::state.host, sizeof(model::state.host), "%s", line + 5);
         ui::invalidate();
         return;
@@ -888,7 +909,9 @@ void handle_line(char* line)
             s.efforts.select_wire(fields[1]);
         if (fields[2])
             s.speeds.select_wire(fields[2]);
-        store::save_settings();
+        // No store::save_settings() here: option cursors are host-owned and
+        // re-supplied on every connect, so persisting them would only wear
+        // the NVS partition.
         publish_settings(false);
         ui::invalidate();
         return;
@@ -932,7 +955,7 @@ void handle_line(char* line)
         }
         list->index = 0;
         list->select_wire(current);
-        store::save_settings();
+        // Catalogues are host-owned too; see the CFG note about NVS wear.
         publish_settings(false);
         ui::invalidate();
         return;
@@ -967,6 +990,10 @@ void handle_line(char* line)
         if (staged_started_ms && slot == 0 && staged_present[0]) {
             sendf("CCP_DECK|WARN|batch_restarted\n");
             reset_staged_tasks();
+        } else if (staged_started_ms && staged_present[slot]) {
+            // A repeated non-zero slot is last-wins within the batch. Keep
+            // the batch intact but make the overwrite observable.
+            sendf("CCP_DECK|WARN|slot_overwrite|slot=%d\n", slot);
         }
         if (!staged_started_ms)
             staged_started_ms = lgfx::millis();
@@ -1005,25 +1032,6 @@ void handle_line(char* line)
 
 } // namespace hostlink
 
-extern "C" void companion_receive_line(const char* line)
-{
-    if (!line)
-        return;
-    const size_t length = ::strnlen(line, 512);
-    if (length >= 512) {
-        hostlink::sendf("CCP_SERIAL|line_dropped|reason=truncated_callback\n");
-        return;
-    }
-    char copy[512];
-    std::memcpy(copy, line, length + 1);
-    hostlink::handle_line(copy);
-}
-
-extern "C" void companion_transport_activity()
-{
-    hostlink::note_host_activity();
-}
-
 extern "C" void companion_ble_link_changed(bool connected)
 {
     std::printf("CCP_NATIVE|ble_link|%s\n", connected ? "connected" : "disconnected");
@@ -1045,8 +1053,8 @@ extern "C" void app_main(void)
     store::init();
     ui::init();
 
-    hostlink::emit("boot", true, kFirmwareVersion);
-    hostlink::sendf("CCP_HELLO|%s|%s\n", kFirmwareVersion, esp_get_idf_version());
+    hostlink::emit("boot", true, firmware_version());
+    hostlink::sendf("CCP_HELLO|%s|%s\n", firmware_version(), esp_get_idf_version());
     hostlink::sendf("CCP_BOOT|reset_reason=%d\n", static_cast<int>(esp_reset_reason()));
 
     keys::init();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lamp.h"
 #include "model.h"
 #include "motion.h"
 #include "status_timing.h"
@@ -9,7 +10,7 @@ namespace status_animation {
 inline bool lamp_is_viewed(const model::Task* task)
 {
     return task && task->status == model::Status::Done
-        && (task->color == 0xffffff || task->locally_viewed_done);
+        && (task->color == lamp::kDoneSeen || task->locally_viewed_done);
 }
 
 inline float viewed_fade_progress(bool requested, const model::Task* task,
