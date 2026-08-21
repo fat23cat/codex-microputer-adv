@@ -32,9 +32,10 @@ void initial_sync_uses_lamp_color_without_event()
     check(!viewed.unseen_done, "white initial lamp is gray/viewed");
     check(!viewed.completion_hold, "initial done has no permanent hold");
 
-    model::Task unread;
-    result = status_reducer::apply(unread, lamp(0x00ff4c));
-    check(unread.unseen_done, "green initial lamp is unread");
+    model::Task restored;
+    result = status_reducer::apply(restored, lamp(0x00ff4c));
+    check(!restored.unseen_done, "green initial lamp is restored as viewed");
+    check(restored.locally_viewed_done, "baseline completion resists stale green snapshots");
     check(!result.changed, "green initial frame has no event");
 }
 
@@ -114,8 +115,11 @@ void selecting_existing_unread_completion_marks_it_viewed()
     model::state = model::State{};
     model::state.task_count = 1;
     auto& task = model::state.tasks[0];
+    status_reducer::apply(task, lamp(0x304ffe));
     status_reducer::apply(task, lamp(0x00ff4c));
-    check(task.unseen_done, "background completion starts unread");
+    task.completion_hold = false; // background completion animation finished
+    status_reducer::apply(task, lamp(0x00ff4c));
+    check(task.unseen_done, "background active-to-done transition starts unread");
     model::mark_done_viewed(0);
     check(!task.unseen_done, "selecting unread completion marks it viewed");
 }

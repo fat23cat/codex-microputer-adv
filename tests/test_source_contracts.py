@@ -207,6 +207,9 @@ require("tools/install.py",
 require("main/codex_micro_protocol.cpp",
         r"status_reducer::apply\(\s*task, frame, session\.baseline\(\)\)",
         "all status snapshots during control-plane bootstrap must be baseline-only")
+require("main/status_reducer.h",
+        r"if \(initial_sync\)[\s\S]{0,420}locally_viewed_done = true[\s\S]{0,120}unseen_done = false",
+        "connection baseline must not manufacture unread completions")
 require("main/codex_micro_protocol.cpp",
         r"if \(task\.status == model::Status::Done &&\s*id->valueint == model::state\.selected\)[\s\S]{0,120}mark_done_viewed",
         "selected completion must settle viewed even during the local selection guard")

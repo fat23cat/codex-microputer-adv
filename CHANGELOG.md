@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.6 — 2026-08-21
+
+- Treat the first Codex lighting snapshot as restored state, so reconnecting or
+  rebooting cannot turn every previously completed task unread green.
+- Preserve green unread feedback for real active-to-completed transitions.
+
 ## 0.4.5 — 2026-08-21
 
 - Moved long status scores and short interface cues onto separate hardware

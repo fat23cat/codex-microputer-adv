@@ -52,14 +52,23 @@ inline Result apply(model::Task& task, const LampFrame& frame, bool baseline = f
         task.lighting_interrupted = false;
     }
 
-    const bool fresh_completion = !baseline && task.seen
+    const bool initial_sync = baseline || !task.seen;
+    const bool fresh_completion = !initial_sync
                                && result.before != model::Status::Done;
     if (task.status != model::Status::Done) {
         task.unseen_done = false;
         task.completion_hold = false;
         task.locally_viewed_done = false;
     } else {
-        if (fresh_completion) {
+        if (initial_sync) {
+            // The first frame restores Codex's current lamps; it is not six
+            // new events. Codex may restore old completed lamps as green, so
+            // only a later active-to-done edge is allowed to create unread
+            // work on this device.
+            task.completion_hold = false;
+            task.locally_viewed_done = true;
+            task.unseen_done = false;
+        } else if (fresh_completion) {
             task.completion_hold = true;
             task.locally_viewed_done = false;
         }
@@ -68,7 +77,7 @@ inline Result apply(model::Task& task, const LampFrame& frame, bool baseline = f
         task.unseen_done = task.completion_hold ? true : result.target_unseen;
     }
 
-    result.initial_sync = baseline || !task.seen;
+    result.initial_sync = initial_sync;
     if (result.initial_sync) {
         task.seen = true;
     } else {
