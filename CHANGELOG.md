@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4 — 2026-08-21
+
+- Made selected-completion read state self-healing on every native status
+  snapshot and added an animation-independent settlement fail-safe.
+
 ## 0.4.3 — 2026-08-21
 
 - Fixed selected tasks remaining unread green when they complete during the

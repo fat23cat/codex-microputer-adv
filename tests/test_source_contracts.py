@@ -31,7 +31,7 @@ require("SCENARIOS.ru.md", r"фиксируется на 1,85 секунды",
 require("main/codex_micro_protocol.cpp",
         r'"lights\.preview"[\s\S]{0,180}ui::note_composer_control_preview\(\)',
         "native light preview must feed the composer control overlay")
-require("main/ui.cpp", r"if \(composer_control_idle >= 8\.f\) set_composer_control_active\(false\)",
+require("main/ui.cpp", r"if \(composer_control_idle >= 8\.f\)\s*set_composer_control_active\(false\)",
         "composer control overlay must not remain stuck")
 require("main/ui.cpp",
         r"void note_composer_control_preview\(\)[\s\S]{0,450}if \(composer_control_target\)",
@@ -195,6 +195,12 @@ require("main/codex_micro_protocol.cpp",
 forbid("main/codex_micro_protocol.cpp",
        r"selection_guarded\(\)\s*&&\s*task\.status == model::Status::Done",
        "selection guard must not suppress selected completion read state")
+require("main/codex_micro_protocol.cpp",
+        r"if \(!session\.baseline\(\)\)\s*model::mark_done_viewed\(model::state\.selected\)",
+        "every live native snapshot must repair selected completion read state")
+require("main/ui.cpp",
+        r"!announcing\(\)[\s\S]{0,420}settle_viewed_completion\([\s\S]{0,120}has_announcement_for_slot\(slot\)",
+        "a completed selected task must settle even if its animation finalizer is missed")
 require("main/main.cpp",
         r"s\.selected = selected_hint[\s\S]{0,320}mark_done_viewed\(s\.selected\)",
         "diagnostic task batches must use the same selected-completion read contract")

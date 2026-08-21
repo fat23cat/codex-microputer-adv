@@ -300,6 +300,13 @@ bool apply_thread_lights(cJSON* params, session_sync::Tracker& session)
         // animation; its final frame will settle to viewed grey.
         model::mark_done_viewed(breath_slot);
     }
+    // Read state must be self-healing, not edge-triggered. A completion can
+    // arrive as restoration after a transient all-off frame, in which case
+    // reduced.changed is deliberately false. Every subsequent authoritative
+    // live snapshot still confirms that the locally selected completed task is
+    // being viewed, so a missed transition cannot leave it green forever.
+    if (!session.baseline())
+        model::mark_done_viewed(model::state.selected);
     return true;
 }
 

@@ -175,6 +175,24 @@ inline bool take_next_announcement(uint32_t now_ms, Announcement& out)
     return true;
 }
 
+inline bool has_announcement_for_slot(int slot)
+{
+    for (uint8_t i = 0; i < state.announcement_count; ++i) {
+        if (state.announcements[i].slot == slot) return true;
+    }
+    return false;
+}
+
+inline bool settle_viewed_completion(Task& task, bool animation_owned)
+{
+    if (task.status != Status::Done || !task.locally_viewed_done
+        || !task.completion_hold || animation_owned)
+        return false;
+    task.completion_hold = false;
+    task.unseen_done = false;
+    return true;
+}
+
 inline const Task* selected_task()
 {
     if (state.task_count <= 0) return nullptr;

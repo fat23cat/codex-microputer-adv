@@ -1816,6 +1816,22 @@ void service()
         animating = true;
     }
 
+    // Semantic read state must not depend on an animation reaching one exact
+    // frame. If a selected completion was marked viewed but its takeover was
+    // cancelled, replaced, or ended without its fade flag, settle it once no
+    // current or queued animation still owns that slot.
+    if (!announcing()) {
+        const int slot = model::state.selected;
+        if (slot >= 0 && slot < model::state.task_count) {
+            auto& task = model::state.tasks[slot];
+            if (model::settle_viewed_completion(
+                    task, model::has_announcement_for_slot(slot))) {
+                std::printf("CCP_NATIVE|selected_completion_settled|%d|failsafe\n", slot);
+                dirty = true;
+            }
+        }
+    }
+
     for (float& flash : setting_flash) {
         if (flash < motion::kFast) { flash += dt; animating = true; }
     }

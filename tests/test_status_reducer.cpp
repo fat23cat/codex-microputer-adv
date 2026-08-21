@@ -120,6 +120,24 @@ void selecting_existing_unread_completion_marks_it_viewed()
     check(!task.unseen_done, "selecting unread completion marks it viewed");
 }
 
+void selected_completion_settles_after_animation_ownership_ends()
+{
+    model::Task task;
+    task.status = model::Status::Done;
+    task.unseen_done = true;
+    task.completion_hold = true;
+    task.locally_viewed_done = true;
+
+    check(!model::settle_viewed_completion(task, true),
+          "active or queued animation retains completion hold");
+    check(task.unseen_done && task.completion_hold,
+          "owned completion remains green");
+    check(model::settle_viewed_completion(task, false),
+          "unowned viewed completion settles");
+    check(!task.unseen_done && !task.completion_hold,
+          "settled completion is gray with no hold");
+}
+
 } // namespace
 
 int main()
@@ -131,8 +149,9 @@ int main()
     latest_lamp_color_remains_authoritative();
     selected_completion_stays_viewed_despite_stale_green_lamp();
     selecting_existing_unread_completion_marks_it_viewed();
+    selected_completion_settles_after_animation_ownership_ends();
     if (failures)
         return EXIT_FAILURE;
-    std::cout << "PASS status_reducer (7 scenarios)\n";
+    std::cout << "PASS status_reducer (8 scenarios)\n";
     return EXIT_SUCCESS;
 }
