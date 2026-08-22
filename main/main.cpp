@@ -647,15 +647,15 @@ void handle_press(const Press& press)
     case Key::EncoderLeft:
     case Key::EncoderRight: {
         const bool right = press.key == Key::EncoderRight;
-        if (ui::composer_control_active())
-            codex_micro::suppress_host_selection(2000);
+        codex_micro::suppress_host_selection(2000);
         if (!send_encoder_step(right)) {
             ui::toast("DIAL", "no host", theme::kOrange);
             break;
         }
         audio::play(right ? audio::Cue::StepRight : audio::Cue::StepLeft);
-        if (ui::composer_control_active())
-            ui::notify_composer_control_step(right ? 1 : -1);
+        // Turning the dial is the request to see the surface. The no-host path
+        // returns above, so a dial with nothing to drive still shows nothing.
+        ui::notify_composer_control_step(right ? 1 : -1);
         break;
     }
 
@@ -663,10 +663,12 @@ void handle_press(const Press& press)
         // A click opens or selects whatever Codex currently focuses. Wait
         // for a host light preview before presenting a local control UI.
         const bool had_preview = ui::composer_control_active();
-        if (had_preview)
+        if (had_preview) {
+            ui::notify_composer_control_select();
             ui::dismiss_composer_control_preview();
-        else
+        } else {
             ui::allow_composer_control_preview();
+        }
         const auto target = codex_micro::active_transport();
         if (!send_encoder_press_to(target)) {
             encoder_press_transport = codex_micro::Transport::None;

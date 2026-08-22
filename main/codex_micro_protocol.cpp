@@ -206,8 +206,30 @@ bool apply_thread_lights(cJSON* params, session_sync::Tracker& session)
             ++model::state.host_lighting_serial;
         }
         ++model::state.host_activity_serial;
+        // The frame is wrong as task state but it is the only truth the device
+        // has about the surface the host is currently showing. Mirror it onto
+        // the control page instead of dropping it: when the host repaints its
+        // lamps because the dial moved, the screen moves with them.
+        uint32_t preview_rgb[6] = {};
+        float    preview_level[6] = {};
+        cJSON* lamp = nullptr;
+        cJSON_ArrayForEach(lamp, params)
+        {
+            cJSON* id = cJSON_GetObjectItemCaseSensitive(lamp, "id");
+            if (!cJSON_IsNumber(id) || id->valueint < 0 || id->valueint >= 6)
+                continue;
+            cJSON* color = cJSON_GetObjectItemCaseSensitive(lamp, "c");
+            cJSON* brightness = cJSON_GetObjectItemCaseSensitive(lamp, "b");
+            if (cJSON_IsNumber(color))
+                preview_rgb[id->valueint] =
+                    static_cast<uint32_t>(color->valuedouble) & 0xffffff;
+            if (cJSON_IsNumber(brightness))
+                preview_level[id->valueint] = std::clamp(
+                    static_cast<float>(brightness->valuedouble), 0.f, 1.f);
+        }
         ui::note_composer_control_preview();
-        std::printf("CCP_NATIVE|thstatus|picker_preview_ignored\n");
+        ui::note_composer_control_lamps(preview_rgb, preview_level);
+        std::printf("CCP_NATIVE|thstatus|picker_preview_mirrored\n");
         return false;
     }
 

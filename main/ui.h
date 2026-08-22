@@ -60,6 +60,10 @@ bool composer_control_active();
 void allow_composer_control_preview();
 void dismiss_composer_control_preview();
 void notify_composer_control_step(int direction);
+void notify_composer_control_select();
+// Mirror the host's own six-lamp preview frame onto the control page. Colours
+// are rgb888, levels 0..1, six of each.
+void note_composer_control_lamps(const uint32_t* rgb, const float* level);
 void note_composer_control_preview();
 void cancel_status_announcements();
 

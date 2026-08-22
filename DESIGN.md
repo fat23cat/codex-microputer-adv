@@ -171,14 +171,19 @@ them, a release is the quietest thing the device does.
   position and seats for the alternatives.
 - Corner annunciator: exceptional deck chrome is flush with the panel edges and
   measured in whole task columns. The weak-link notice is two columns wide in
-  the top-right and dark. It shows the state before it says it: a meter of
-  three ascending bars with only the first lit — the shape every radio has used
-  for decades — and then the one word for what is weak. The spent bars are
-  drawn as outlines rather than omitted, because a meter missing two bars reads
-  as two bars of signal while a meter with two empty ones reads as four fifths
-  of it gone; the lit bar carries the plate's only warm pixels. A critical
-  battery readout steps aside for the plate rather than overprinting it.
-  Neither is drawn while the link is healthy and the battery is not.
+  the top-right, and it is built as an instrument panel rather than as a
+  warning label. A dark plate carrying a word in reverse is a sticker applied
+  over the deck; an inset of the same paper the interface is printed on,
+  delimited by a one-pixel rule and bleeding off the screen edge, is part of
+  the panel. It holds a short technical code for what is weak at the left and
+  the level itself at the right, with air between them instead of a filled
+  bar. The level is three equal dots, not an ascending staircase: equal marks
+  are a scale being read, a staircase is a picture of a signal. One dot lit
+  warm and two left in spent chrome says one of three without a word for it,
+  and the spent dots stay drawn — a scale missing two positions reads as a
+  two-position scale. A critical battery readout steps aside for the plate
+  rather than overprinting it. Neither is drawn while the link is healthy and
+  the battery is not.
 - Build stamp: the running firmware version, set in the splash's top-right
   trim with the registration marks — right-aligned to the inner edge of the
   corner mark, on the same rule, tracked tight and mixed most of the way back

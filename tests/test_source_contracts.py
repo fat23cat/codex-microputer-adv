@@ -46,8 +46,33 @@ require("main/ui.cpp",
         r"void note_composer_control_preview\(\)[\s\S]{0,450}if \(composer_control_target\)",
         "late light preview must not reopen a confirmed control")
 require("main/codex_micro_protocol.cpp",
-        r"if \(selection_guarded\(\) \|\| ui::composer_control_active\(\)\)[\s\S]{0,520}picker_preview_ignored[\s\S]{0,80}return false;",
+        r"if \(selection_guarded\(\) \|\| ui::composer_control_active\(\)\)[\s\S]{0,1700}picker_preview_mirrored[\s\S]{0,80}return false;",
         "picker lamp preview must bypass the task status reducer")
+require("main/codex_micro_protocol.cpp",
+        r"ui::note_composer_control_lamps\(preview_rgb, preview_level\)",
+        "the guarded lamp frame must be mirrored onto the control page, not dropped")
+require("main/ui.cpp",
+        r"void notify_composer_control_step\(int direction\)[\s\S]{0,420}"
+        r"if \(!composer_control_target\) \{[\s\S]{0,220}set_composer_control_active\(true\)",
+        "turning the dial must open the control surface, not only pressing it")
+require("main/ui.cpp",
+        r"composer_knob_angle\.to\(composer_knob_angle\.target\s*\+ composer_control_step_dir \* kDetentRadians\)",
+        "each detent must advance the knob by exactly one flute")
+require("main/ui.cpp",
+        r"void draw_iso_knob\(int cx, int cy, float angle[\s\S]{0,2200}"
+        r"for \(int k = 0; k < 12; \+\+k\)",
+        "the dial must be drawn as a fluted isometric knob carrying its angle")
+require("main/ui.cpp",
+        r"void draw_iso_key\(int cx, int cy, float press",
+        "the select key must be drawn as an isometric keycap")
+require("main/ui.cpp",
+        r"void note_composer_control_lamps\(const uint32_t\* rgb, const float\* level\)"
+        r"[\s\S]{0,700}composer_lamp_marker\.to\(static_cast<float>\(lit\)\)",
+        "the mirrored lamps must move the marker to the lit lamp")
+require("main/main.cpp",
+        r"audio::play\(right \? audio::Cue::StepRight : audio::Cue::StepLeft\);"
+        r"[\s\S]{0,220}ui::notify_composer_control_step\(right \? 1 : -1\);",
+        "a successful detent must always reach the control surface")
 require("main/main.cpp",
         r"Cue::StepRight\s*:\s*audio::Cue::StepLeft",
         "encoder detents must have directional audio")
@@ -64,8 +89,8 @@ require("main/ui.cpp",
         r"composer_control_open_sound_pending[\s\S]{0,260}audio::play\(audio::Cue::MenuOpen\)",
         "host-opened composer cue must be deferred to the main UI task")
 require("main/main.cpp",
-        r"if \(ui::composer_control_active\(\)\)\s*\n\s*ui::notify_composer_control_step",
-        "encoder rotation must not invent a local control mode")
+        r"send_encoder_step\(right\)[\s\S]{0,200}no host[\s\S]{0,320}notify_composer_control_step",
+        "a dial with no host must stay silent instead of opening a local mode")
 require("main/main.cpp",
         r"press\.key == Key::Enter[\s\S]{0,420}companion_codex_key\(\"ACT12\", 1[\s\S]{0,180}companion_codex_key\(\"ACT12\", 0",
         "Enter must send the native Codex Micro composer action")
@@ -324,15 +349,15 @@ require("main/ble_transport.cpp",
 require("main/theme.h", r"kSignalStripW\s*=\s*2 \* kCellPitchX",
         "the weak-link annunciator must span exactly two task columns")
 require("main/ui.cpp",
-        r"ble_signal_weak[\s\S]{0,900}fill_rect\(x, 0, kSignalStripW, kSignalStripH, kInk\)"
-        r"[\s\S]{0,700}SIGNAL",
-        "weak BLE must be a grid-aligned corner annunciator, not a floating badge")
+        r"ble_signal_weak[\s\S]{0,1400}fill_rect\(x, 0, kSignalStripW, kSignalStripH, kPaper\)"
+        r"[\s\S]{0,300}fill_rect\(x, 0, 1, kSignalStripH, kInk\);[\s\S]{0,120}BLE",
+        "weak BLE must be a grid-aligned inset of the interface's own paper, "
+        "delimited by a hairline -- not a dark sticker applied over the deck")
 require("main/ui.cpp",
-        r"for \(int bar = 0; bar < 3; \+\+bar\) \{[\s\S]{0,220}"
-        r"bar == 0 \? kVerm : spent\);[\s\S]{0,260}"
-        r"if \(bar > 0\) fill_rect\(bx \+ 1, by \+ 1, 1, height - 2, kInk\);",
-        "the weak-link annunciator must show the state as a meter with one "
-        "bar lit, and must draw the spent bars rather than omit them")
+        r"for \(int dot = 0; dot < 3; \+\+dot\) \{[\s\S]{0,200}"
+        r"dot == 0 \? kVerm : spent\);",
+        "the weak-link level must be three equal dots with one lit, and the "
+        "spent positions must stay drawn")
 require("main/ui.cpp",
         r"const int right = weak_link \? kScreenW - kSignalStripW - 5 : 225;",
         "the critical battery readout must step aside for the annunciator")
@@ -382,7 +407,7 @@ require("main/ui.cpp",
         r"Status::Done\)\s+return t\.unseen_done \? kInk : kIdleDigit[\s\S]{0,300}Status::Done && !t\.unseen_done",
         "viewed completed tasks must use the inactive grey digit scale")
 require("main/main.cpp",
-        r"had_preview[\s\S]{0,180}dismiss_composer_control_preview[\s\S]{0,160}else\s+ui::allow_composer_control_preview",
+        r"had_preview[\s\S]{0,240}dismiss_composer_control_preview[\s\S]{0,160}else \{\s*ui::allow_composer_control_preview",
         "encoder press must explicitly toggle the composer control overlay")
 require("main/ui.cpp",
         r"dismiss_composer_control_preview\(\)[\s\S]{0,180}suppressed_until_ms = lgfx::millis\(\) \+ 5000",

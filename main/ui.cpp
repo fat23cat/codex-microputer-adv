@@ -72,6 +72,25 @@ int composer_control_step_dir = 0;
 uint32_t composer_control_closed_at_ms = 0;
 uint32_t composer_control_suppressed_until_ms = 0;
 bool composer_control_open_sound_pending = false;
+// What the host is actually showing on Micro's six lamps while its surface is
+// open. This frame used to be parsed, recognised as a picker preview and then
+// dropped on the floor: the device knew the host had repainted its lights and
+// showed a generic panel anyway. It is the only truthful thing the device has
+// about a surface whose semantics it deliberately does not guess, so it is now
+// mirrored -- colour, level and which lamp is lit.
+constexpr int kLampCount = 6;
+uint16_t composer_lamp_colour[kLampCount] = {};
+motion::Spring composer_lamp_level[kLampCount];
+motion::Spring composer_lamp_marker;
+bool  composer_lamp_valid = false;
+int   composer_lamp_lit = -1;
+float composer_lamp_age = 99.f;
+// The dial itself. Detents accumulate into an angle the knob springs towards,
+// so a fast series of clicks is one continuous rotation rather than a queue of
+// jumps -- the same reason every marker on the device is a spring.
+motion::Spring composer_knob_angle;
+motion::Spring composer_key_press;
+constexpr float kDetentRadians = 0.5236f;   // 30 degrees: twelve flutes, one per detent
 float marquee_hold = 0.f;
 int   marquee_dir  = 1;
 
@@ -575,32 +594,32 @@ void draw_deck()
     // floating across the middle of two of them at an arbitrary offset. RSSI
     // hysteresis prevents flicker.
     //
-    // It shows the state rather than announcing it in words. Three ascending
-    // bars with only the first one lit say "weak" in the shape every radio
-    // meter has used for decades -- read before it is read as text -- so the
-    // label can drop to the one word that says what is weak. The unlit bars
-    // stay drawn rather than absent: a meter with two bars missing reads as
-    // two bars of signal, while a meter with two bars empty reads as four
-    // fifths of it gone. The lit bar carries the only warm pixel in the
-    // plate, which used to be a rule down the left edge doing the same job
-    // less specifically.
+    // It is built as an instrument panel, not as a warning label. A dark plate
+    // with a word set in reverse is a sticker applied on top of the deck; an
+    // inset of the same paper the interface is printed on, delimited by a
+    // hairline and holding a short technical code and a level readout, is part
+    // of the panel. So: bone field, one-pixel rule all the way round, the code
+    // for what is weak at the left, and the level itself at the right, with
+    // air between them rather than a filled bar.
+    //
+    // The readout is three equal dots, not an ascending staircase: equal marks
+    // are a scale being read, a staircase is a picture of a signal. One dot
+    // lit warm and two left in the tone of spent chrome says one of three
+    // without a word for it, and the spent dots stay drawn -- a scale missing
+    // two positions reads as a two-position scale.
     const bool weak_link = model::state.link == model::Link::Ble
                         && model::state.ble_signal_weak;
     if (weak_link) {
         const int x = kScreenW - kSignalStripW;
-        fill_rect(x, 0, kSignalStripW, kSignalStripH, kInk);
-        const uint16_t spent = mix(kInk, kPaper, 96);
-        for (int bar = 0; bar < 3; ++bar) {
-            const int height = 3 + bar * 3;
-            const int bx = x + 6 + bar * 5;
-            const int by = 10 - height;
-            fill_rect(bx, by, 3, height, bar == 0 ? kVerm : spent);
-            // The bars that are gone are outlines, not dim fills: a filled
-            // grey bar is still a bar, and the meter would read as three
-            // bars of signal in three colours.
-            if (bar > 0) fill_rect(bx + 1, by + 1, 1, height - 2, kInk);
+        fill_rect(x, 0, kSignalStripW, kSignalStripH, kPaper);
+        fill_rect(x, 0, kSignalStripW, 1, kInk);
+        fill_rect(x, kSignalStripH - 1, kSignalStripW, 1, kInk);
+        fill_rect(x, 0, 1, kSignalStripH, kInk);
+        draw_tracked("BLE", x + 8, 3, 1, kInk, kPaper);
+        const uint16_t spent = mix(kPaper, kInk, 58);
+        for (int dot = 0; dot < 3; ++dot) {
+            fill_rect(x + 53 + dot * 7, 5, 4, 4, dot == 0 ? kVerm : spent);
         }
-        draw_tracked("SIGNAL", x + 27, 3, 1, kPaper, kInk, 1);
     }
 
     // Battery is exceptional chrome: stay silent during normal operation and
@@ -708,6 +727,120 @@ void draw_voice_takeover()
 // its existing numeral remains the spatial anchor, and copy uses the same
 // type scale and vertical rhythm. Never label it as reasoning: the same dial
 // can own navigation, scrolling, or a custom action.
+// A filled ellipse, used only for the isometric knob's faces. LovyanGFX has
+// fillEllipse but not through the layer offset, and the knob needs the same
+// scanline shape for its top face, its shadow and its inner cap.
+void draw_ellipse(int cx, int cy, int rx, int ry, uint16_t c)
+{
+    for (int dy = -ry; dy <= ry; ++dy) {
+        const float t = static_cast<float>(dy) / static_cast<float>(ry);
+        const int half = static_cast<int>(rx * std::sqrt(std::max(0.f, 1.f - t * t)));
+        fill_rect(cx - half, cy + dy, 1, 1, c);
+        fill_rect(cx + half, cy + dy, 1, 1, c);
+    }
+}
+
+void fill_ellipse(int cx, int cy, int rx, int ry, uint16_t c)
+{
+    for (int dy = -ry; dy <= ry; ++dy) {
+        const float t = static_cast<float>(dy) / static_cast<float>(ry);
+        const int half = static_cast<int>(rx * std::sqrt(std::max(0.f, 1.f - t * t)));
+        if (half <= 0) continue;
+        hline(cx - half, cy + dy, half * 2 + 1, c);
+    }
+}
+
+// The dial, drawn as the object it is. A flat marker cannot show which way the
+// hand turned; a fluted cylinder can, because the flutes carry the angle. The
+// knob is pixel isometric to match the deck's own flat, un-shaded language:
+// two solid faces, no gradient, no anti-aliasing.
+void draw_iso_knob(int cx, int cy, float angle, uint16_t base, float copy)
+{
+    constexpr int kRx = 30;
+    constexpr int kRy = 12;
+    constexpr int kWall = 11;
+
+    const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
+    const uint16_t wall = mix(base, kPaper, static_cast<uint8_t>(ink * 0.30f));
+    const uint16_t face = mix(base, kPaper, static_cast<uint8_t>(ink * 0.13f));
+    const uint16_t edge = mix(base, kPaper, static_cast<uint8_t>(ink * 0.80f));
+    const uint16_t mark = mix(base, kPaper, ink);
+
+    // Side wall first: the top face is drawn over its upper half.
+    fill_ellipse(cx, cy + kWall, kRx, kRy, wall);
+    fill_rect(cx - kRx, cy, kRx * 2 + 1, kWall, wall);
+    fill_ellipse(cx, cy, kRx, kRy, face);
+
+    draw_ellipse(cx, cy, kRx, kRy, edge);
+
+    // Flutes. Twelve of them, one per detent, so a single click visibly walks
+    // the pattern by exactly one flute rather than smearing. They are knurling
+    // on the rim, not spokes: they stay in the outer band and continue down the
+    // near half of the wall, which is what makes the cylinder read as solid.
+    for (int k = 0; k < 12; ++k) {
+        const float a = angle + static_cast<float>(k) * kDetentRadians;
+        const float ca = std::cos(a), sa = std::sin(a);
+        const int rim_x = cx + static_cast<int>(kRx * ca);
+        const int rim_y = cy + static_cast<int>(kRy * sa);
+        const int in_x  = cx + static_cast<int>(kRx * 0.84f * ca);
+        const int in_y  = cy + static_cast<int>(kRy * 0.84f * sa);
+        canvas.drawLine(in_x + layer_dx, in_y, rim_x + layer_dx, rim_y, edge);
+        if (sa > 0.05f)  // only the near half of the wall is facing us
+            vline(rim_x, rim_y, static_cast<int>(kWall * sa) + 1, edge);
+    }
+
+    // The cap, and on it the pointer. The pointer travels with the body, so the
+    // eye reads absolute rotation and not just motion.
+    fill_ellipse(cx, cy, static_cast<int>(kRx * 0.66f),
+                 static_cast<int>(kRy * 0.66f), wall);
+    draw_ellipse(cx, cy, static_cast<int>(kRx * 0.66f),
+                 static_cast<int>(kRy * 0.66f), edge);
+    const float pa = angle - 1.5708f;
+    fill_rect(cx + static_cast<int>(kRx * 0.40f * std::cos(pa)) - 2,
+              cy + static_cast<int>(kRy * 0.40f * std::sin(pa)) - 2, 4, 4, mark);
+}
+
+// The `\` key, same projection, same two faces. It sits beside the knob because
+// the pair of them is the whole control: turn, then select.
+void draw_iso_key(int cx, int cy, float press, uint16_t base, float copy)
+{
+    constexpr int kHalfW = 23;
+    constexpr int kHalfH = 12;
+    const int wall = 9 - static_cast<int>(motion::clamp01(press) * 6.f);
+    const int top  = cy - static_cast<int>(motion::clamp01(press) * 3.f);
+
+    const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
+    const uint16_t side = mix(base, kPaper, static_cast<uint8_t>(ink * 0.30f));
+    const uint16_t face = mix(base, kPaper, static_cast<uint8_t>(ink * 0.13f));
+    const uint16_t edge = mix(base, kPaper, static_cast<uint8_t>(ink * 0.80f));
+    const uint16_t mark = mix(base, kPaper, ink);
+
+    for (int pass = 0; pass < 2; ++pass) {
+        const int oy = pass == 0 ? wall : 0;
+        const uint16_t c = pass == 0 ? side : face;
+        for (int dy = -kHalfH; dy <= kHalfH; ++dy) {
+            const int half = kHalfW - kHalfW * std::abs(dy) / kHalfH;
+            hline(cx - half, top + dy + oy, half * 2 + 1, c);
+        }
+        if (pass == 0)
+            fill_rect(cx - kHalfW, top, kHalfW * 2 + 1, wall + 1, side);
+    }
+    canvas.drawLine(cx - kHalfW + layer_dx, top, cx + layer_dx, top - kHalfH, edge);
+    canvas.drawLine(cx + layer_dx, top - kHalfH, cx + kHalfW + layer_dx, top, edge);
+    canvas.drawLine(cx - kHalfW + layer_dx, top + wall, cx + layer_dx, top + kHalfH + wall, edge);
+    canvas.drawLine(cx + layer_dx, top + kHalfH + wall,
+                    cx + kHalfW + layer_dx, top + wall, edge);
+    vline(cx - kHalfW, top, wall + 1, edge);
+    vline(cx + kHalfW, top, wall + 1, edge);
+
+    // The backslash is drawn lying on the face, parallel to the near-left edge,
+    // so it reads as printed on the keycap instead of floating over it.
+    for (int i = 0; i < 3; ++i) {
+        canvas.drawLine(cx - 11 + layer_dx, top - 6 + i,
+                        cx + 11 + layer_dx, top + 4 + i, mark);
+    }
+}
+
 void draw_composer_control_takeover()
 {
     const float amount = motion::ease_in_out_cubic(
@@ -728,43 +861,70 @@ void draw_composer_control_takeover()
                                                  static_cast<float>(kScreenW), amount));
     fill_status_surface(x0, 0, x1 - x0, kScreenH, base, 255, 0, 30);
 
+    // The numeral stays the spatial anchor, but it now retreats to the header
+    // instead of owning the middle: the instrument is what the page is about.
     const float resting_w = micro5_digits::kVisualWidth[0][slot];
     const float resting_h = micro5_digits::kVisualHeight[0][slot];
     const float resting_visual_x = source_x + (source_w - resting_w) / 2.f;
     const float resting_visual_y = kDigitSelectedBottom - resting_h;
     const float resting_source_x = resting_visual_x - micro5_digits::kLeft[0][slot];
     const float resting_source_y = resting_visual_y - micro5_digits::kTop[0][slot];
-    const float expanded_scale = 2.f;
-    const float expanded_visual_x = (kScreenW
-        - micro5_digits::kVisualWidth[0][slot] * expanded_scale) / 2.f;
-    const float expanded_visual_y = 13.f;
     draw_micro5_digit(slot,
-        motion::lerp(resting_source_x,
-                     expanded_visual_x - micro5_digits::kLeft[0][slot] * expanded_scale,
-                     amount),
-        motion::lerp(resting_source_y,
-                     expanded_visual_y - micro5_digits::kTop[0][slot] * expanded_scale,
-                     amount),
-        motion::lerp(1.f, expanded_scale, amount), kPaper);
+        motion::lerp(resting_source_x, 12.f - micro5_digits::kLeft[0][slot], amount),
+        motion::lerp(resting_source_y, 5.f - micro5_digits::kTop[0][slot], amount),
+        1.f, kPaper);
 
     const float copy = motion::ease_out_cubic((amount - 0.55f) / 0.45f);
     if (copy <= 0.f) return;
     const uint16_t text = mix(base, kPaper, static_cast<uint8_t>(copy * 255.f));
-    const int title_w = tracked_width("COMPOSER", 3, 2);
-    draw_tracked_transparent("COMPOSER", (kScreenW - title_w) / 2,
-                             77, 3, text, 2);
+    const uint16_t faint = mix(base, kPaper, static_cast<uint8_t>(copy * 96.f));
+    draw_tracked_transparent("COMPOSER", 34, 6, 2, text);
 
-    // A detent nudges one fixed marker; the device never invents a named value.
+    // Six lamps, mirroring what Micro is showing right now. Until the host
+    // sends a preview frame they stay as empty wells: the device says "I do not
+    // know what this dial is editing" rather than inventing a scale.
+    constexpr int kLampX = 34;
+    constexpr int kLampPitch = 12;
+    constexpr int kLampW = 8;
+    for (int i = 0; i < kLampCount; ++i) {
+        const int lx = kLampX + i * kLampPitch;
+        if (composer_lamp_valid) {
+            const float level = motion::clamp01(composer_lamp_level[i].x);
+            const uint16_t lit = mix(base, composer_lamp_colour[i],
+                                     static_cast<uint8_t>(copy * 255.f));
+            fill_rect(lx, 20, kLampW, 5,
+                      mix(faint, lit, static_cast<uint8_t>(level * 255.f)));
+        } else {
+            fill_rect(lx, 20, kLampW, 1, faint);
+            fill_rect(lx, 24, kLampW, 1, faint);
+        }
+    }
+    if (composer_lamp_valid && composer_lamp_lit >= 0) {
+        const int mx = kLampX + static_cast<int>(
+            composer_lamp_marker.x * kLampPitch) + kLampW / 2;
+        fill_rect(mx - 1, 27, 3, 2, text);
+    }
+
+    // The instrument. Turning the dial rotates the knob by exactly one flute;
+    // the chevron on the side that moved lights for the length of the detent.
     const float step = motion::clamp01(1.f - composer_control_step_age / 0.34f);
-    const int marker = kScreenW / 2 + static_cast<int>(composer_control_step_dir * step * 18.f);
-    hline(82, 103, 76, mix(base, kPaper, 130));
-    fill_rect(marker - 2, 99, 4, 9, text);
-    const char* adjust = "[  ]  ADJUST";
-    draw_tracked_transparent(adjust,
-        (kScreenW - tracked_width(adjust, 2)) / 2, 113, 2, text);
-    const char* confirm = "\\  CONFIRM";
-    draw_tracked_transparent(confirm,
-        (kScreenW - tracked_width(confirm, 1)) / 2, 125, 1, text);
+    const float lean = composer_control_step_dir * step * 3.f;
+    draw_iso_knob(66 + static_cast<int>(lean), 74, composer_knob_angle.x, base, copy);
+    for (int side = 0; side < 2; ++side) {
+        const int dir = side == 0 ? -1 : 1;
+        const bool hot = composer_control_step_dir == dir && step > 0.f;
+        const uint16_t c = hot
+            ? mix(base, kPaper, static_cast<uint8_t>(copy * (80.f + step * 175.f)))
+            : faint;
+        const int ax = side == 0 ? 16 : 116;
+        for (int k = 0; k < 5; ++k)
+            vline(ax + dir * k, 74 - 4 + k / 2, 9 - k, c);
+    }
+    draw_iso_key(176, 72, composer_key_press.x, base, copy);
+
+    hline(16, 108, 208, mix(base, kPaper, static_cast<uint8_t>(copy * 60.f)));
+    draw_tracked_transparent("TURN", 66 - tracked_width("TURN", 2) / 2, 116, 2, text);
+    draw_tracked_transparent("SELECT", 176 - tracked_width("SELECT", 2) / 2, 116, 2, text);
 }
 
 // ---------------------------------------------------------------- announcement
@@ -1496,6 +1656,9 @@ const uint16_t* capture_frame(const char* scene)
     const int saved_voice_slot = voice_slot;
     const motion::Spring saved_composer_amount = composer_control_amount;
     const bool saved_composer_target = composer_control_target;
+    const bool saved_lamp_valid = composer_lamp_valid;
+    const int  saved_lamp_lit = composer_lamp_lit;
+    const motion::Spring saved_knob = composer_knob_angle;
     const motion::Ramp saved_boot_ramp = boot_ramp;
     const motion::Ramp saved_transition = transition;
     motion::Spring saved_selection[kCellCount];
@@ -1571,6 +1734,18 @@ const uint16_t* capture_frame(const char* scene)
         current = Screen::Deck;
         composer_control_target = true;
         composer_control_amount.snap(1.f);
+        {
+            const uint32_t rgb[6] = {0x2f6bd8, 0x2f6bd8, 0x2f6bd8,
+                                     0xf2f0e6, 0x3a3a3a, 0x3a3a3a};
+            const float level[6] = {0.35f, 0.35f, 0.35f, 1.f, 0.f, 0.f};
+            note_composer_control_lamps(rgb, level);
+            for (int i = 0; i < kLampCount; ++i)
+                composer_lamp_level[i].snap(level[i]);
+            composer_lamp_marker.snap(3.f);
+            composer_knob_angle.snap(kDetentRadians * 0.5f);
+            composer_control_step_dir = 1;
+            composer_control_step_age = 0.08f;
+        }
         draw_deck();
         draw_composer_control_takeover();
     } else if (std::strcmp(scene, "settings") == 0) {
@@ -1620,6 +1795,9 @@ const uint16_t* capture_frame(const char* scene)
     voice_slot = saved_voice_slot;
     composer_control_amount = saved_composer_amount;
     composer_control_target = saved_composer_target;
+    composer_lamp_valid = saved_lamp_valid;
+    composer_lamp_lit = saved_lamp_lit;
+    composer_knob_angle = saved_knob;
     boot_ramp = saved_boot_ramp;
     transition = saved_transition;
     std::memcpy(selection_amount, saved_selection, sizeof(saved_selection));
@@ -1724,7 +1902,15 @@ void set_composer_control_active(bool active)
     composer_control_idle = active ? 0.f : 99.f;
     composer_control_step_age = 99.f;
     composer_control_step_dir = 0;
-    if (!active) composer_control_closed_at_ms = lgfx::millis();
+    if (active) {
+        composer_knob_angle.snap(0.f);
+        composer_key_press.snap(0.f);
+    } else {
+        composer_control_closed_at_ms = lgfx::millis();
+        composer_lamp_valid = false;
+        composer_lamp_lit = -1;
+        for (auto& level : composer_lamp_level) level.snap(0.f);
+    }
     if (active) wake();
     dirty = true;
 }
@@ -1753,11 +1939,51 @@ void dismiss_composer_control_preview()
 
 void notify_composer_control_step(int direction)
 {
-    if (!composer_control_target) return;
+    // Turning the dial is itself the request to see the surface. Waiting for a
+    // press meant the first detent of every adjustment happened blind.
+    if (!composer_control_target) {
+        composer_control_suppressed_until_ms = 0;
+        composer_control_closed_at_ms = 0;
+        set_composer_control_active(true);
+        composer_control_open_sound_pending = true;
+    }
     composer_control_step_dir = direction < 0 ? -1 : 1;
     composer_control_step_age = 0.f;
     composer_control_idle = 0.f;
+    composer_knob_angle.to(composer_knob_angle.target
+                           + composer_control_step_dir * kDetentRadians);
     dirty = true;
+}
+
+void notify_composer_control_select()
+{
+    if (!composer_control_target) return;
+    composer_key_press.snap(1.f);
+    composer_key_press.to(0.f);
+    composer_control_idle = 0.f;
+    invalidate();
+}
+
+void note_composer_control_lamps(const uint32_t* rgb, const float* level)
+{
+    int lit = -1;
+    float best = 0.f;
+    for (int i = 0; i < kLampCount; ++i) {
+        const uint32_t c = rgb[i];
+        composer_lamp_colour[i] = canvas.color565(
+            static_cast<uint8_t>((c >> 16) & 0xff),
+            static_cast<uint8_t>((c >> 8) & 0xff),
+            static_cast<uint8_t>(c & 0xff));
+        composer_lamp_level[i].to(level[i]);
+        if (level[i] > best) { best = level[i]; lit = i; }
+    }
+    composer_lamp_valid = true;
+    composer_lamp_age = 0.f;
+    if (lit >= 0) {
+        composer_lamp_lit = lit;
+        composer_lamp_marker.to(static_cast<float>(lit));
+    }
+    invalidate();
 }
 
 void note_composer_control_preview()
@@ -1946,6 +2172,22 @@ void service()
     if (composer_control_target) {
         composer_control_idle += dt;
         composer_control_step_age += dt;
+        composer_lamp_age += dt;
+        if (!composer_knob_angle.settled()) {
+            composer_knob_angle.step(dt, 26.f, 0.62f);
+            animating = true;
+        }
+        if (!composer_key_press.settled()) {
+            composer_key_press.step(dt, 30.f, 0.7f);
+            animating = true;
+        }
+        if (!composer_lamp_marker.settled()) {
+            composer_lamp_marker.step(dt, 24.f, 0.8f);
+            animating = true;
+        }
+        for (auto& level : composer_lamp_level) {
+            if (!level.settled()) { level.step(dt, 18.f, 0.9f); animating = true; }
+        }
         // Mouse/keyboard confirmation on the Mac does not send an encoder
         // release back to the device. Never leave the overlay stuck forever.
         if (composer_control_idle >= 8.f) set_composer_control_active(false);

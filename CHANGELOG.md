@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.8.0 — 2026-08-22
+
+- The dial now opens its own surface. Turning the knob used to show nothing
+  until you had pressed `\`, so the first detent of every adjustment was made
+  blind. Any detent the host accepts opens the page; a detent with no host
+  still only toasts.
+- The host's lamp frame is mirrored instead of discarded. While the control
+  page is open, `v.oai.thstatus` is still kept out of the task status reducer —
+  it is presentation, not task state — but it is the only truthful thing the
+  device knows about a surface whose semantics it deliberately does not guess.
+  The six lamps are drawn in the host's own colours and levels, with a marker
+  that springs to the brightest. Before the first frame they are empty wells.
+- Drew the instrument. The page is now a pixel isometric knob and an isometric
+  `\` keycap: the knob is knurled with twelve flutes, one per detent, so a
+  click visibly walks the pattern by exactly one flute and the pointer carries
+  absolute angle rather than just motion; the keycap depresses on select. Both
+  are two flat faces with no shading, matching the deck's own language.
+- The numeral retreats to the header at resting scale and the copy is now
+  TURN / SELECT under each object, because the instrument is what the page is
+  about.
+
+## 0.7.2 — 2026-08-22
+
+- Rebuilt the weak-link annunciator as an instrument panel instead of a
+  warning label. It was a dark plate with a word set in reverse — a sticker
+  applied over the deck. It is now an inset of the same paper the interface is
+  printed on, delimited by a one-pixel rule and bleeding off the screen edge,
+  with the code BLE at the left and the level at the right.
+- The level is three equal dots with the first lit warm, replacing the
+  ascending staircase: equal marks read as a scale, a staircase reads as a
+  picture of a signal. The spent positions stay drawn in spent chrome.
+
 ## 0.7.1 — 2026-08-22
 
 - Put the build stamp back in the splash's top-right trim, with the
