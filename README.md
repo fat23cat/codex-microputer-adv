@@ -220,7 +220,7 @@ python3 tools/screenshot.py --scene all --output screenshots
 ```
 
 Available scenes are `live`, `splash`, `pairing`, `deck`, `recording`, `composer`,
-`settings`, and `debug`. Screenshot traffic is USB-only and does not congest
+`settings`, `debug`, `chime`, `status`, and `signal`. Screenshot traffic is USB-only and does not congest
 the native Codex BLE session. Demo task state exists only for the duration of
 the render and never replaces the live task list.
 

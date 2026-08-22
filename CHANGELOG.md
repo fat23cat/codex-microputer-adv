@@ -1,5 +1,229 @@
 # Changelog
 
+## 0.7.1 — 2026-08-22
+
+- Put the build stamp back in the splash's top-right trim, with the
+  registration marks rather than with the wordmark: right-aligned to the inner
+  edge of the corner mark, on the same rule, tracked tight, no prefix, and
+  faded most of the way back to the paper. It is reference, not identity — it
+  should be findable, not read. The pixel face has one size, so this is as
+  small as the type gets; the reduction is in tracking and contrast.
+
+## 0.7.0 — 2026-08-22
+
+- Corrected every sound for the register it plays in. This speaker radiates
+  almost nothing below a few hundred hertz and the ear is least sensitive
+  exactly where it gives up, so cues written low arrived quiet however
+  carefully their levels were balanced — the input request after it moved down
+  a fifth, the key press before that, the startup chime's pad two octaves under
+  its melody. Every voice is now scaled by where it sits: flat above 760 Hz,
+  rising about 4.5 dB per octave below it, and holding below 280 Hz where more
+  level buys only cone excursion. The gains are worked out before each sample
+  loop, so no libm reaches the samples.
+- Trimmed every score to a target peak instead of a fixed output scale. With
+  voices corrected, what a cue peaks at depends on which notes it is playing,
+  so the peak is measured during the render and the buffer scaled once it is
+  known. Cues are now equally loud rather than equally scaled, and the
+  hierarchy between them lives in one place: request and result own the room,
+  fault matches them, work in progress sits under them, a release is quietest.
+  The input request roughly doubled in level as a result.
+- `CCP_AUDIO` and `CCP_CHIME_READY` report the pre-trim peak, so headroom can
+  be watched on hardware rather than guessed.
+- Rebuilt the weak-link annunciator around a meter: three ascending bars with
+  the first lit warm and the other two drawn as outlines, then the single word
+  SIGNAL. It reads as a state before it reads as text, and the plate keeps its
+  two-column grid alignment.
+- Moved the build stamp out of the splash's top-right corner onto the centre
+  line under the product name. It was touching the registration mark but
+  aligned to nothing; it is now the third line of the wordmark and the corners
+  are corners again.
+
+## 0.6.1 — 2026-08-22
+
+- Stopped the input cue sounding like completion. It had been built from the
+  completion bell's spectrum, register and roll, so the two read as the same
+  event with different notes. Three things separate them now and none is the
+  melody: the ask carries its third partial and no octave — odd harmonics
+  only, hollow and reedy where the bell is glassy; it speaks a fifth above its
+  chord, around 260-400 Hz, a register completion never uses; and its rhythm
+  is speech rather than a roll, two notes close together and then a gap two
+  and a half times as long before the one it settles on.
+- Gave each step of the progression an intonation contour instead of a climb.
+  The phrase lifts to a peak and settles a step below it, coming to rest above
+  where it began on a chord tone that is never the root — the completion bell
+  climbs and lands on top, and doing the same thing an octave down would still
+  have been the same gesture. The glint on the arc's peak step now lights the
+  top of the phrase rather than its end, a fifth above rather than an octave,
+  which would have put the bell's partial back.
+- The bed under the wait is an open fourth rather than a fifth: with the ask
+  now speaking a fifth above the chord, a bed fifth landed exactly on the
+  phrase's first note. Renders 85.3 ms against the 100 ms debounce, 90.5 ms on
+  the lit step.
+
+## 0.6.0 — 2026-08-22
+
+- Made a series of input requests a piece of music rather than a repeated cue.
+  Each ask now takes the next step of a four-chord progression held in one
+  key: the bed moves under it, the three notes are drawn from whichever chord
+  is standing, the arc peaks on the third step — where a quiet octave above
+  the last note lights it, once a cycle — and leans back on the fourth, which
+  wants the first again. Answering four things in a row is heard as a line
+  arriving somewhere instead of the same request four times, and because the
+  cycle closes without resolving, a long run keeps going round. The key is now
+  held for a whole series and re-rolled only after half a minute of quiet:
+  transposing every ask, as every other cue does, is what stopped the asks
+  from relating to each other at all.
+- Paid for the progression by dropping the input bed's middle voice. The chord
+  under the wait is a bare open fifth now; what keeps it alive is that it
+  moves. Renders are 85.6 ms against the 100 ms debounce, 91.2 ms on the lit
+  step, down from 91.5 ms flat.
+- `CCP_AUDIO` reports the progression step for input requests, replacing the
+  figure index: a series has to be watched over several asks to be judged.
+
+## 0.5.2 — 2026-08-22
+
+- Took the sting out of the input cue's last note. It was the highest note in
+  the figure, struck as hard as the two before it and pulled a semitone upward
+  through its decay — a rising leading tone on a pure sine, which is a whine
+  rather than a question. No input note bends its pitch now, none climbs more
+  than a fifth above its call (the old figures topped out near 1.1 kHz, where
+  this transducer is harshest), and the last note is the quietest and longest
+  of the three with nearly twice the onset of the others: it is reached rather
+  than struck. The figure asks by where it stops instead of by pulling upward.
+  Voices end where they fall below one output unit rather than where the decay
+  table runs out, and the decay is shifted to reach exactly zero there, which
+  is what pays for a third note inside the debounce: 91 ms of 100.
+
+## 0.5.1 — 2026-08-22
+
+- Made the input cue three notes instead of two, and took the edge off them.
+  Each note now opens on twenty milliseconds of squared attack rather than at
+  full level, carries a second partial at a sixteenth of its fundamental
+  instead of a quarter, and rings longer, so the ask reads as a phrase leaning
+  forward rather than as strikes. The figures rise through a second onto an
+  open fifth — or, once in three, climb to a major seventh and stop there —
+  and each note arrives quieter than the one before. Voices now end where they
+  fall under one output unit instead of where the decay table runs out, which
+  pays for the third note.
+
+## 0.5.0 — 2026-08-22
+
+- Rebuilt the input cue in the same grammar as the other four status scores.
+  Every one of them is a struck gesture over a quiet sustained bed with a soft
+  tail; the ask alone was blown resonators over a loud chord that pulsed,
+  leaned between chord tones and receded on its own envelope, which is why it
+  never sounded like the same instrument. It is now two notes struck with the
+  completion bell's voice — a fundamental, a light second partial, one
+  exponential decay each — staggered so they ring together and rising into an
+  answer that lifts about a semitone through its decay, over one quiet open
+  chord on the shared hold envelope. It still asks rather than resolves: the
+  pair never settles, and the three figures (a fourth rising to a fifth, the
+  same rise a register lower, and a just major seventh that stops there)
+  survive unchanged. The call moved up an octave, into the register this
+  transducer actually radiates and the one completion already speaks from.
+
+## 0.4.9 — 2026-08-22
+
+- Rebuilt the input cue as three figures instead of one shape transposed
+  through twelve interval combinations. Two of the three resolve onto open
+  consonances — a fourth rising to the octave, a unison rising to the fifth —
+  and the third leaps a just major seventh and stops there: a rising leading
+  tone is the shape of a spoken question, so one request in three reads as an
+  open question rather than as an alert. The question never descends or
+  roughens, which is what keeps it distinguishable from the fault cue.
+- Put the attention pad in the register opposite its notes. Where the call
+  sits high the bed now drops an octave underneath it; where the call sits low
+  the bed rises an octave above it, so top against bottom holds every time.
+  Both layers remain ratios of one 220 Hz anchor, so they cannot drift out of
+  tune with each other, and the return tail now lifts back to that figure's
+  answering note rather than to a ratio of whatever root the pad happens to
+  sit on.
+
+## 0.4.8 — 2026-08-21
+
+- Rebuilt the local screens as one instrument language: numbered rows, a single
+  sprung selection plate per list, and inverted content clipped to the plate so
+  the highlight no longer jumps a whole row ahead of the animation.
+- Replaced the volume and host-channel readouts with segment meters that count
+  their own steps, with the volume meter following the stored value on a spring.
+- Gave the chime grid a two-axis sprung plate and set its pad captions solid so
+  the longest name stops running under the neighbouring pad's border.
+- Made task-key press feedback attack on the first frame and ease out, which
+  reads as a switch rather than as a slow glow arriving late.
+- Stamped the running build in the splash's top-right registration mark, read
+  through the single `firmware::version()` accessor rather than a second copy.
+- Rebuilt the weak-BLE notice as a corner annunciator flush with the top and
+  right edges and exactly two task columns wide, instead of a badge floating
+  across the middle of two towers at an arbitrary offset. A critical battery
+  readout now steps aside for it and takes its contrast from the tower it
+  actually lands on.
+- Rebuilt the attention cue as a rising two-note call. It previously shared the
+  error cue's unresolved intervals — its variation set was led by a tritone —
+  and its low beating bed, so a request for input was heard as a fault. The
+  call now leaps an open fifth, major sixth or octave and bends its second note
+  upward, and a small ungated pad holds an open triad under the whole wait
+  instead of leaving silence between the pulses. The ask no longer repeats
+  itself: each recurrence steps to another tone of the chord and arrives
+  quieter than the last, so the cue states itself and recedes rather than
+  nagging at one pitch. Documented the interval contract for all five status
+  cues. Dropped both notes of the call a full octave and gave it a short swell
+  instead of an instant onset: at the old register the widest call put real
+  energy where this transducer is harshest. The call is now derived from the
+  pad as a suspended fourth above its root rather than carrying its own
+  register, so it cannot drift out of the chord it asks over, and it leans on
+  its octave partial to be heard at all down there.
+- Made the attention pad the cue rather than a floor under it. It is now the
+  loudest sustained element in any status score and it pulses 13 dB deep at
+  twice the ask's rate, cresting on it, so every second pulse is the one that
+  carries a note. Its inner voice leans between the fifth and the sixth and
+  rests in between rather than sounding both forever, and changes every second
+  ask. Pulse, repeat and chord change are now powers of two off one phase
+  instead of three unrelated rates drifting past each other.
+- Stopped the pad rasping. Its shaping values were held flat between updates,
+  which is a staircase — inaudible while the modulation was shallow, and not
+  once it was deepened, because the steps repeat at a kilohertz where this
+  speaker is most efficient and a low chord has nothing to mask them. They are
+  now slewed to each new value instead of stepped to it.
+- Made the attention pad recede far earlier. It used to hold full level for the
+  whole 1.85 s hold and fall only as the panel left; it now begins its decay at
+  the middle of the hold — twice as early — and the fall is squared, so it is
+  already down 8 dB a third of a second later and silent by the moment the old
+  fade would only have started. The return tail takes over from there, so the
+  chord hands off instead of being cut. Ending the pad with the hold rather than
+  with the panel also removed the render-time spread it was causing: attention
+  now renders in 89 ms every time, against 90-101 ms before.
+- Stopped the pad breaking up on its peaks. Locking the pad's crest to the
+  ask's made them sum, and the chord's weight was on a 220 Hz root, which this
+  speaker answers with cone excursion rather than output. The weight moved to
+  the octave: peak level fell by a third and energy at 220 Hz by more than half,
+  with the pulse depth unchanged.
+- Rebuilt the attention notes as bottles rather than beeps. They are blown into
+  over tens of milliseconds instead of starting at full level, carry one
+  resonant mode plus a second that dies well before the fundamental, and are
+  excited by a breath of dulled noise. Both notes now ring together: the first
+  used to be cut off mid-decay to make room for the second, which put a step of
+  several hundred output units exactly where the question turns and was most of
+  what made the cue feel hard. The answer's upward lift was reduced from two
+  semitones to about one — a wide bend on a pure tone is a squeal — and the
+  brightest remaining voices, the pad's twelfth and the ask's fifth, were
+  removed. The first note of the two was then inaudible: at 293 Hz the
+  fundamental barely leaves the case, and its octave had been cut to a brief
+  chiff, so it is now carried by a sustained octave weighted above the
+  fundamental. The higher answering note, which carries itself, keeps the short
+  chiff.
+- Brought every status score back inside its debounce window, so the sound is
+  ready before the takeover it accompanies rather than delaying it. Envelopes
+  now come from an interpolated decay table instead of `exp()`, each opening
+  gesture states how long it is actually alive rather than computing silence
+  for the rest of a 3.3 s score, the sustained beds are skipped outside the
+  hold, and the attention pad's two sub-hertz shaping voices are held for a
+  millisecond at a time. Attention 122 ms and Running 192 ms are now 86 ms and
+  62 ms, with the per-play variation left untouched. A source contract keeps
+  library maths out of the per-sample path.
+- Added `chime`, `status` and `signal` screenshot scenes so those screens, and
+  the one arrangement where the deck's two chrome elements can collide, are
+  capturable.
+
 ## 0.4.7 — 2026-08-21
 
 - Made the firmware version single-sourced from the build: `PROJECT_VER` in

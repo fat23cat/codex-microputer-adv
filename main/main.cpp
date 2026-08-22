@@ -28,6 +28,7 @@
 #include "esp_partition.h"
 #include "esp_system.h"
 #include "esp_vfs_fat.h"
+#include "firmware.h"
 #include "lamp.h"
 #include "link.h"
 #include "model.h"
@@ -43,13 +44,7 @@ State state;
 
 namespace {
 
-// The root CMakeLists.txt PROJECT_VER is the single source of truth; the OTA
-// app descriptor carries it as `version`, so the diagnostic protocol, the
-// boot probe and the flashed image can never disagree.
-const char* firmware_version()
-{
-    return esp_app_get_description()->version;
-}
+const char* firmware_version() { return firmware::version(); }
 
 model::Task staged[model::kMaxTasks];
 bool staged_present[model::kMaxTasks] = {};

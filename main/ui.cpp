@@ -10,6 +10,7 @@
 
 #include "audio.h"
 #include "display_fade.h"
+#include "firmware.h"
 #include "lamp.h"
 #include "model.h"
 #include "motion.h"
@@ -97,13 +98,30 @@ int   settings_row = 0;
 constexpr int kSettingsRows  = static_cast<int>(SettingsRow::Count);
 constexpr int kSettingsPitch = 22;
 constexpr int kSettingsRowH  = 20;
+// Every local list moves the same way: one plate travels, the rows stay put.
+// Sharing one spring shape across the menus is what makes them read as pages of
+// one instrument rather than as three separately built screens.
 motion::Spring settings_marker;
+motion::Spring settings_level;   // volume meter position, in segments
 int debug_settings_row = 0;
 constexpr int kDebugSettingsRows = static_cast<int>(DebugSettingsRow::Count);
+constexpr int kDebugSettingsPitch = 15;
+constexpr int kDebugSettingsRowH  = 14;
+motion::Spring debug_settings_marker;
 DeveloperPreview developer_preview = DeveloperPreview::None;
 int debug_row = 0;
 constexpr int kDebugRows = 7;
 constexpr int kDebugPitch = 12;
+constexpr int kDebugRowH  = 11;
+motion::Spring debug_marker;
+constexpr int kChimeCols  = 5;
+constexpr int kChimeGap   = 2;
+constexpr int kChimeLeft  = 6;
+constexpr int kChimeTop   = 28;
+constexpr int kChimeCellW = 44;
+constexpr int kChimeCellH = 36;
+motion::Spring chime_marker_x;
+motion::Spring chime_marker_y;
 // Per-chip flap timers for the bottom rail, so a setting change is visible
 // where the setting actually lives instead of only as a toast.
 float setting_flash[3] = {9.f, 9.f, 9.f};
@@ -229,6 +247,64 @@ void draw_chip(const char* text, int x, int y, uint16_t colour, float flash)
     const int band = std::max(1, static_cast<int>(4 * half));
     clip(x, y + 4 - band, tracked_width(text, 2) + 2, band * 2);
     draw_tracked(text, x, y, 2, colour, kPaper);
+    unclip();
+}
+
+// A level on this device is counted, not swept. Discrete blocks keep the same
+// square vocabulary as the six task towers, stay readable at the 10 % dim
+// level, and say how many steps the control actually has.
+constexpr int kSegW   = 5;
+constexpr int kSegGap = 2;
+constexpr int kSegH   = 9;
+
+int segment_width(int count)
+{
+    return count <= 0 ? 0 : count * kSegW + (count - 1) * kSegGap;
+}
+
+// `level` is in segments and is deliberately fractional: the block currently
+// arriving mixes in instead of popping, which is what makes a stepped meter
+// read as one travelling value rather than ten independent lamps.
+void draw_segment_meter(int right, int y, int count, float level,
+                        uint16_t on, uint16_t seat)
+{
+    int x = right - segment_width(count);
+    for (int i = 0; i < count; ++i, x += kSegW + kSegGap) {
+        const float fill = motion::clamp01(level - static_cast<float>(i));
+        if (fill <= 0.f) {
+            // An empty step keeps a seat rather than disappearing, so the
+            // meter's length always states the full range.
+            fill_rect(x, y + kSegH - 2, kSegW, 2, seat);
+            continue;
+        }
+        fill_rect(x, y, kSegW, kSegH,
+                  mix(seat, on, static_cast<uint8_t>(fill * 255.f)));
+    }
+}
+
+// One of N rather than N of N: the unselected positions stay as seats so the
+// control shows how many channels exist while only one is live.
+void draw_segment_selector(int right, int y, int count, int active,
+                           uint16_t on, uint16_t seat)
+{
+    int x = right - segment_width(count);
+    for (int i = 0; i < count; ++i, x += kSegW + kSegGap) {
+        if (i == active) fill_rect(x, y, kSegW, kSegH, on);
+        else             fill_rect(x, y + kSegH - 2, kSegW, 2, seat);
+    }
+}
+
+// The focused row is not a differently coloured row: it is the same row seen
+// through a plate. Callers draw their content twice -- once on paper, once in
+// the plate's ink clipped to the plate -- so the inversion travels with the
+// spring instead of jumping a whole row ahead of it.
+template <typename Rows>
+void draw_selection_plate(int x, int y, int w, int h, const Rows& rows)
+{
+    rows(false);
+    fill_rect(x, y, w, h, kInk);
+    clip(x, y, w, h);
+    rows(true);
     unclip();
 }
 
@@ -455,10 +531,12 @@ void draw_cells()
         }
         uint8_t press_glow = 0;
         // Press feedback is a restrained material flash, never a size change.
+        // A key answers on contact and then lets go: full value on the first
+        // frame with an eased decay reads as a mechanical switch, where the
+        // previous symmetric ramp read as a slow glow arriving late.
         if (cell_press[i] < kPressTime) {
-            const float p = cell_press[i] / kPressTime;
-            const float glow = 1.f - std::abs(2.f * p - 1.f);
-            press_glow = static_cast<uint8_t>(glow * 42.f);
+            const float glow = 1.f - motion::ease_out_cubic(cell_press[i] / kPressTime);
+            press_glow = static_cast<uint8_t>(glow * 54.f);
         }
         fill_status_surface(x, y, w, h, base, opacity, press_glow,
                             has_status_gradient(t) ? 38 : 0);
@@ -491,39 +569,60 @@ void draw_deck()
         draw_tracked("MUTE", 7, 5, 1, kVerm, kPaper);
     }
 
-    // Battery is a compact numeric readout. Contrast is derived from the sixth
-    // tower, so it remains part of the deck instead of becoming a floating card.
-    model::Task indicator_fallback;
-    const model::Task& indicator_task = model::state.task_count > 5
-        ? model::state.tasks[5] : indicator_fallback;
-    const uint16_t tower = cell_fill(indicator_task);
-    const uint16_t chrome = cell_digit_colour(indicator_task);
+    // Normal connectivity stays silent. Weak BLE is an annunciator, not a
+    // sticker: it is flush with the top and right edges and spans exactly two
+    // task columns, so it lands on the same grid as the towers instead of
+    // floating across the middle of two of them at an arbitrary offset. RSSI
+    // hysteresis prevents flicker.
+    //
+    // It shows the state rather than announcing it in words. Three ascending
+    // bars with only the first one lit say "weak" in the shape every radio
+    // meter has used for decades -- read before it is read as text -- so the
+    // label can drop to the one word that says what is weak. The unlit bars
+    // stay drawn rather than absent: a meter with two bars missing reads as
+    // two bars of signal, while a meter with two bars empty reads as four
+    // fifths of it gone. The lit bar carries the only warm pixel in the
+    // plate, which used to be a rule down the left edge doing the same job
+    // less specifically.
+    const bool weak_link = model::state.link == model::Link::Ble
+                        && model::state.ble_signal_weak;
+    if (weak_link) {
+        const int x = kScreenW - kSignalStripW;
+        fill_rect(x, 0, kSignalStripW, kSignalStripH, kInk);
+        const uint16_t spent = mix(kInk, kPaper, 96);
+        for (int bar = 0; bar < 3; ++bar) {
+            const int height = 3 + bar * 3;
+            const int bx = x + 6 + bar * 5;
+            const int by = 10 - height;
+            fill_rect(bx, by, 3, height, bar == 0 ? kVerm : spent);
+            // The bars that are gone are outlines, not dim fills: a filled
+            // grey bar is still a bar, and the meter would read as three
+            // bars of signal in three colours.
+            if (bar > 0) fill_rect(bx + 1, by + 1, 1, height - 2, kInk);
+        }
+        draw_tracked("SIGNAL", x + 27, 3, 1, kPaper, kInk, 1);
+    }
+
     // Battery is exceptional chrome: stay silent during normal operation and
-    // surface the exact value only when the user needs to act (< 15%).
+    // surface the exact value only when the user needs to act (< 15%). It steps
+    // aside for the annunciator rather than overprinting it, and takes its
+    // contrast from whichever tower it actually lands on, so it remains part of
+    // the deck instead of becoming a floating card.
     if (model::state.battery >= 0 && model::state.battery < 15) {
+        const int right = weak_link ? kScreenW - kSignalStripW - 5 : 225;
+        model::Task indicator_fallback;
+        const int under = std::clamp(right / kCellPitchX, 0, kCellCount - 1);
+        const model::Task& indicator_task = model::state.task_count > under
+            ? model::state.tasks[under] : indicator_fallback;
         char battery[6];
         std::snprintf(battery, sizeof(battery), "%d%%", model::state.battery);
-        const uint16_t battery_colour = mix(tower, chrome, 144);
+        const uint16_t battery_colour = mix(cell_fill(indicator_task),
+                                            cell_digit_colour(indicator_task), 144);
         canvas.setFont(&fonts::Font0);
         canvas.setTextSize(1);
         canvas.setTextDatum(textdatum_t::top_right);
         canvas.setTextColor(battery_colour);
-        canvas.drawString(battery, 225 + layer_dx, 3);
-    }
-
-    // Normal connectivity stays silent. Weak BLE is stated plainly in the same
-    // instrument language as the deck: a square dark badge with one warm fault
-    // edge, not a floating white sticker or a generic radio icon. RSSI
-    // hysteresis prevents flicker.
-    if (model::state.link == model::Link::Ble && model::state.ble_signal_weak) {
-        constexpr int badge_x = 82;
-        constexpr int badge_y = 3;
-        constexpr int badge_w = 76;
-        constexpr int badge_h = 13;
-        fill_rect(badge_x, badge_y, badge_w, badge_h, kInk);
-        fill_rect(badge_x, badge_y, 2, badge_h, kVerm);
-        draw_tracked("LOW SIGNAL", badge_x + 8, badge_y + 3,
-                     1, kPaper, kInk, 1);
+        canvas.drawString(battery, right + layer_dx, 3);
     }
 
     canvas.setTextDatum(textdatum_t::top_left);
@@ -911,8 +1010,10 @@ void draw_settings()
     struct Row { const char* label; const char* value; };
     char volume[8];
     char ble_profile[8];
-    std::snprintf(volume, sizeof(volume), "%u%%", static_cast<unsigned>(s.sound_volume));
-    std::snprintf(ble_profile, sizeof(ble_profile), "BLE %u",
+    // The meter states the unit; repeating "%" or "BLE" beside it would only
+    // add words to a control that already shows its own range.
+    std::snprintf(volume, sizeof(volume), "%u", static_cast<unsigned>(s.sound_volume));
+    std::snprintf(ble_profile, sizeof(ble_profile), "%u",
                   static_cast<unsigned>(s.ble_profile + 1));
     const Row rows[kSettingsRows] = {
         {"HOST CHANNEL", ble_profile},
@@ -923,20 +1024,48 @@ void draw_settings()
 
     const int list_top = 30;
     const int marker_y = list_top + static_cast<int>(settings_marker.x + 0.5f);
-    fill_rect(kGutter, marker_y, kScreenW - 2 * kGutter, kSettingsRowH, kInk);
+    const int value_right = kScreenW - kGutter - 7;
 
-    for (int r = 0; r < kSettingsRows; ++r) {
-        const int y = list_top + r * kSettingsPitch;
-        const int mid = y + kSettingsRowH / 2;
-        const bool active = (r == settings_row);
-        const uint16_t bg = active ? kInk : kPaper;
-        const uint16_t fg = active ? kPaper : kInk;
-
-        draw_tracked(rows[r].label, kGutter + 7, mid - 4, 2,
-                     active ? kPaper : kInkSoft, bg);
-        draw_tracked_right(rows[r].value, kScreenW - kGutter - 7,
-                           mid - 4, 2, fg, bg);
-    }
+    // Rows carry their own ordinal. Numbering the settings the way the six task
+    // keys are numbered makes the whole device one counted system, and it gives
+    // the eye a fixed left edge to return to while the plate travels.
+    auto draw_rows = [&](bool inverted) {
+        const uint16_t label = inverted ? kPaper : kInkSoft;
+        const uint16_t value = inverted ? kPaper : kInk;
+        const uint16_t ordinal = inverted ? kGrey : kOrdinal;
+        const uint16_t seat = inverted ? kGrey : kRule;
+        for (int r = 0; r < kSettingsRows; ++r) {
+            const int y = list_top + r * kSettingsPitch;
+            const int text_y = y + kSettingsRowH / 2 - 4;
+            const int meter_y = y + (kSettingsRowH - kSegH) / 2;
+            char index[4];
+            std::snprintf(index, sizeof(index), "%02d", r + 1);
+            draw_tracked_transparent(index, kGutter + 6, text_y, 1, ordinal);
+            draw_tracked_transparent(rows[r].label, kGutter + 27, text_y, 2, label);
+            if (r == static_cast<int>(SettingsRow::BleProfile)) {
+                const int meter_left = value_right - segment_width(3);
+                draw_segment_selector(value_right, meter_y, 3, s.ble_profile,
+                                      value, seat);
+                draw_tracked_transparent(
+                    rows[r].value,
+                    meter_left - 8 - tracked_width(rows[r].value, 1), text_y,
+                    1, value);
+            } else if (r == static_cast<int>(SettingsRow::Volume)) {
+                const int meter_left = value_right - segment_width(10);
+                draw_segment_meter(value_right, meter_y, 10, settings_level.x,
+                                   value, seat);
+                draw_tracked_transparent(
+                    rows[r].value, meter_left - 8 - tracked_width(rows[r].value, 1),
+                    text_y, 1, value);
+            } else {
+                draw_tracked_transparent(
+                    rows[r].value, value_right - tracked_width(rows[r].value, 2),
+                    text_y, 2, value);
+            }
+        }
+    };
+    draw_selection_plate(kGutter, marker_y, kScreenW - 2 * kGutter,
+                         kSettingsRowH, draw_rows);
 
     draw_bottom_rail("TAB CLOSE", nullptr, nullptr, "ARROWS  ENTER");
 }
@@ -958,30 +1087,28 @@ void draw_debug_settings()
         {"STATUS DEBUG", "ENTER"},
     };
     constexpr int top = 27;
-    constexpr int pitch = 15;
-    constexpr int height = 14;
-    const int marker_y = top + debug_settings_row * pitch;
-    fill_rect(kGutter, marker_y, kScreenW - 2 * kGutter, height, kInk);
-    for (int row = 0; row < kDebugSettingsRows; ++row) {
-        const int y = top + row * pitch;
-        const bool active = row == debug_settings_row;
-        if (active) {
-            // The row owns one continuous selection plate. Drawing glyphs with
-            // an opaque text background creates a separate box around every
-            // character and makes the typeface itself appear to change.
-            draw_tracked_transparent(rows[row].label, kGutter + 7, y + 4, 1,
-                                     kPaper);
-            const int value_x = kScreenW - kGutter - 7
-                              - tracked_width(rows[row].value, 1);
-            draw_tracked_transparent(rows[row].value, value_x, y + 4, 1,
-                                     kPaper);
-        } else {
-            draw_tracked(rows[row].label, kGutter + 7, y + 4, 1,
-                         kInkSoft, kPaper);
-            draw_tracked_right(rows[row].value, kScreenW - kGutter - 7,
-                               y + 4, 1, kDim, kPaper);
+    const int marker_y = top + static_cast<int>(debug_settings_marker.x + 0.5f);
+    // The row owns one continuous selection plate. Drawing glyphs with an
+    // opaque text background creates a separate box around every character and
+    // makes the typeface itself appear to change.
+    auto draw_rows = [&](bool inverted) {
+        const uint16_t label = inverted ? kPaper : kInkSoft;
+        const uint16_t value = inverted ? kPaper : kDim;
+        const uint16_t ordinal = inverted ? kGrey : kOrdinal;
+        for (int row = 0; row < kDebugSettingsRows; ++row) {
+            const int y = top + row * kDebugSettingsPitch + 4;
+            char index[4];
+            std::snprintf(index, sizeof(index), "%02d", row + 1);
+            draw_tracked_transparent(index, kGutter + 6, y, 1, ordinal);
+            draw_tracked_transparent(rows[row].label, kGutter + 27, y, 1, label);
+            draw_tracked_transparent(
+                rows[row].value,
+                kScreenW - kGutter - 7 - tracked_width(rows[row].value, 1), y,
+                1, value);
         }
-    }
+    };
+    draw_selection_plate(kGutter, marker_y, kScreenW - 2 * kGutter,
+                         kDebugSettingsRowH, draw_rows);
     draw_bottom_rail("` BACK", nullptr, nullptr, "UP DOWN ENTER");
 }
 
@@ -992,28 +1119,27 @@ void draw_chime_lab()
     draw_tracked_right("ENTER PLAY", kScreenW - kGutter, 7, 1, kInkSoft, kPaper);
     hline(kGutter, 22, kScreenW - 2 * kGutter, kRule);
 
-    constexpr int cols = 5;
-    constexpr int gap = 2;
-    constexpr int left = 6;
-    constexpr int top = 28;
-    constexpr int cell_w = 44;
-    constexpr int cell_h = 36;
-    for (int index = 0; index < audio::kStartupChimeCount; ++index) {
-        const int col = index % cols;
-        const int row = index / cols;
-        const int x = left + col * (cell_w + gap);
-        const int y = top + row * (cell_h + gap);
-        const bool active = index == model::state.startup_chime;
-        const uint16_t bg = active ? kInk : kPaper;
-        const uint16_t fg = active ? kPaper : kInkSoft;
-        if (active) fill_rect(x, y, cell_w, cell_h, bg);
-        else canvas.drawRect(x + layer_dx, y, cell_w, cell_h, kRule);
-        char number[4];
-        std::snprintf(number, sizeof(number), "%02d", index + 1);
-        draw_tracked(number, x + 5, y + 6, 2, fg, bg);
-        draw_tracked(audio::startup_chime_name(index), x + 5, y + 24, 1,
-                     active ? kPaper : kDim, bg);
-    }
+    // The plate travels the grid on two springs, so a diagonal move reads as
+    // one object crossing the panel rather than two edges sliding apart.
+    const int marker_x = kChimeLeft + static_cast<int>(chime_marker_x.x + 0.5f);
+    const int marker_y = kChimeTop + static_cast<int>(chime_marker_y.x + 0.5f);
+    auto draw_pads = [&](bool inverted) {
+        for (int index = 0; index < audio::kStartupChimeCount; ++index) {
+            const int x = kChimeLeft + (index % kChimeCols) * (kChimeCellW + kChimeGap);
+            const int y = kChimeTop + (index / kChimeCols) * (kChimeCellH + kChimeGap);
+            if (!inverted) canvas.drawRect(x + layer_dx, y, kChimeCellW, kChimeCellH, kRule);
+            char number[4];
+            std::snprintf(number, sizeof(number), "%02d", index + 1);
+            draw_tracked_transparent(number, x + 5, y + 6, 2,
+                                     inverted ? kPaper : kInkSoft);
+            // The longest name is six characters and the pad is 44 px wide, so
+            // the caption is set solid: tracked names ran under the next pad's
+            // border and made the grid look misaligned.
+            draw_tracked_transparent(audio::startup_chime_name(index), x + 5,
+                                     y + 24, 0, inverted ? kPaper : kDim);
+        }
+    };
+    draw_selection_plate(marker_x, marker_y, kChimeCellW, kChimeCellH, draw_pads);
     draw_bottom_rail("` BACK", "ARROWS", nullptr, "ENTER PLAY");
 }
 
@@ -1028,34 +1154,32 @@ void draw_status_debug()
     hline(kGutter, 22, kScreenW - 2 * kGutter, kRule);
 
     constexpr int top = 26;
-    constexpr int pitch = kDebugPitch;
-    constexpr int height = 11;
-    const int marker_y = top + debug_row * pitch;
-    fill_rect(kGutter, marker_y, kScreenW - 2 * kGutter, height, kInk);
-    for (int row = 0; row < kDebugRows; ++row) {
-        const int y = top + row * pitch;
-        const bool active = row == debug_row;
-        char value[16] = "ENTER";
-        if (row == 0) {
-            std::snprintf(value, sizeof(value), "%u MS",
-                          static_cast<unsigned>(model::state.status_debounce_ms));
-        } else if (row == 1) {
-            std::snprintf(value, sizeof(value), "%+d MS",
-                          static_cast<int>(model::state.status_audio_offset_ms));
+    const int marker_y = top + static_cast<int>(debug_marker.x + 0.5f);
+    auto draw_rows = [&](bool inverted) {
+        const uint16_t label = inverted ? kPaper : kInkSoft;
+        const uint16_t value_colour = inverted ? kPaper : kDim;
+        const uint16_t ordinal = inverted ? kGrey : kOrdinal;
+        for (int row = 0; row < kDebugRows; ++row) {
+            const int y = top + row * kDebugPitch + 2;
+            char value[16] = "ENTER";
+            if (row == 0) {
+                std::snprintf(value, sizeof(value), "%u MS",
+                              static_cast<unsigned>(model::state.status_debounce_ms));
+            } else if (row == 1) {
+                std::snprintf(value, sizeof(value), "%+d MS",
+                              static_cast<int>(model::state.status_audio_offset_ms));
+            }
+            char index[4];
+            std::snprintf(index, sizeof(index), "%02d", row + 1);
+            draw_tracked_transparent(index, kGutter + 6, y, 1, ordinal);
+            draw_tracked_transparent(labels[row], kGutter + 27, y, 2, label);
+            draw_tracked_transparent(
+                value, kScreenW - kGutter - 7 - tracked_width(value, 1), y, 1,
+                value_colour);
         }
-        if (active) {
-            draw_tracked_transparent(labels[row], kGutter + 7, y + 2, 2,
-                                     kPaper);
-            const int value_x = kScreenW - kGutter - 7
-                              - tracked_width(value, 1);
-            draw_tracked_transparent(value, value_x, y + 2, 1, kPaper);
-        } else {
-            draw_tracked(labels[row], kGutter + 7, y + 2, 2,
-                         kInkSoft, kPaper);
-            draw_tracked_right(value, kScreenW - kGutter - 7, y + 2, 1,
-                               kDim, kPaper);
-        }
-    }
+    };
+    draw_selection_plate(kGutter, marker_y, kScreenW - 2 * kGutter, kDebugRowH,
+                         draw_rows);
     if (debug_row == 1) {
         char current[16];
         std::snprintf(current, sizeof(current), "%+d MS",
@@ -1132,9 +1256,25 @@ void draw_boot()
     const float sub_intro = motion::ease_out_cubic((intro - 0.34f) / 0.66f);
     const uint16_t sub = mix(kPaper, kDim,
         static_cast<uint8_t>(motion::clamp01(sub_intro) * 255.f));
+
     const char* product = "MICROPUTER ADV";
     draw_tracked(product, cx - tracked_width(product, 2) / 2,
                  80, 2, sub, kPaper);
+
+    // The running build is reference, not identity: it belongs with the
+    // registration marks in the trim, not on the centre line with the name.
+    // So it goes back to the top right and is written the way the marks are
+    // written -- right-aligned to the inner edge of the corner mark, on the
+    // same rule, tracked tight, and mixed most of the way back to the paper.
+    // The stock pixel face has one size, so "smaller" here is tighter and
+    // fainter rather than a second font: it should be findable, not read.
+    // The app descriptor allows 32 characters; the corner has room for a
+    // release number, not for a git describe string, so it is clipped here.
+    char build[13];
+    std::snprintf(build, sizeof(build), "%.12s", firmware::version());
+    const uint16_t stamp = mix(kPaper, kDim,
+        static_cast<uint8_t>(motion::clamp01(intro) * 92.f));
+    draw_tracked_right(build, kScreenW - 26, 12, 0, stamp, kPaper);
 
     // Restore the arcade cadence: the prompt is an action, so a crisp blink is
     // more legible than making the whole composition pulse.
@@ -1362,6 +1502,14 @@ const uint16_t* capture_frame(const char* scene)
     std::memcpy(saved_selection, selection_amount, sizeof(saved_selection));
     const float saved_deck_entrance = deck_entrance;
     const int saved_layer_dx = layer_dx;
+    // The menu plates and the volume meter are sprung, so a capture taken mid
+    // travel would not be the representative frame this call promises.
+    const motion::Spring saved_settings_marker = settings_marker;
+    const motion::Spring saved_settings_level = settings_level;
+    const motion::Spring saved_debug_settings_marker = debug_settings_marker;
+    const motion::Spring saved_debug_marker = debug_marker;
+    const motion::Spring saved_chime_marker_x = chime_marker_x;
+    const motion::Spring saved_chime_marker_y = chime_marker_y;
 
     auto& state = model::state;
     state.link = model::Link::Usb;
@@ -1427,10 +1575,33 @@ const uint16_t* capture_frame(const char* scene)
         draw_composer_control_takeover();
     } else if (std::strcmp(scene, "settings") == 0) {
         current = Screen::Settings;
+        settings_marker.snap(static_cast<float>(settings_row * kSettingsPitch));
+        settings_level.snap(state.sound_volume / 10.f);
         draw_settings();
     } else if (std::strcmp(scene, "debug") == 0) {
         current = Screen::DebugSettings;
+        debug_settings_marker.snap(
+            static_cast<float>(debug_settings_row * kDebugSettingsPitch));
         draw_debug_settings();
+    } else if (std::strcmp(scene, "signal") == 0) {
+        // Both pieces of exceptional deck chrome at once, which is the only
+        // arrangement where they can collide.
+        current = Screen::Deck;
+        state.link = model::Link::Ble;
+        state.ble_signal_weak = true;
+        state.battery = 12;
+        draw_deck();
+    } else if (std::strcmp(scene, "chime") == 0) {
+        current = Screen::ChimeLab;
+        chime_marker_x.snap(static_cast<float>(
+            (state.startup_chime % kChimeCols) * (kChimeCellW + kChimeGap)));
+        chime_marker_y.snap(static_cast<float>(
+            (state.startup_chime / kChimeCols) * (kChimeCellH + kChimeGap)));
+        draw_chime_lab();
+    } else if (std::strcmp(scene, "status") == 0) {
+        current = Screen::StatusDebug;
+        debug_marker.snap(static_cast<float>(debug_row * kDebugPitch));
+        draw_status_debug();
     } else {
         known = false;
     }
@@ -1454,6 +1625,12 @@ const uint16_t* capture_frame(const char* scene)
     std::memcpy(selection_amount, saved_selection, sizeof(saved_selection));
     deck_entrance = saved_deck_entrance;
     layer_dx = saved_layer_dx;
+    settings_marker = saved_settings_marker;
+    settings_level = saved_settings_level;
+    debug_settings_marker = saved_debug_settings_marker;
+    debug_marker = saved_debug_marker;
+    chime_marker_x = saved_chime_marker_x;
+    chime_marker_y = saved_chime_marker_y;
     dirty = true;
     return pixels;
 }
@@ -1480,7 +1657,22 @@ void go(Screen target)
     current = target;
     transition.restart(4.5f);
     if (target == Screen::Deck) deck_entrance = 0.f;
-    if (target == Screen::Settings) settings_marker.snap(static_cast<float>(settings_row * kSettingsPitch));
+    // A page arrives with its plate already in place; only moving within the
+    // page is a gesture worth animating.
+    if (target == Screen::Settings) {
+        settings_marker.snap(static_cast<float>(settings_row * kSettingsPitch));
+        settings_level.snap(model::state.sound_volume / 10.f);
+    }
+    if (target == Screen::DebugSettings)
+        debug_settings_marker.snap(static_cast<float>(debug_settings_row * kDebugSettingsPitch));
+    if (target == Screen::StatusDebug)
+        debug_marker.snap(static_cast<float>(debug_row * kDebugPitch));
+    if (target == Screen::ChimeLab) {
+        chime_marker_x.snap(static_cast<float>(
+            (model::state.startup_chime % kChimeCols) * (kChimeCellW + kChimeGap)));
+        chime_marker_y.snap(static_cast<float>(
+            (model::state.startup_chime / kChimeCols) * (kChimeCellH + kChimeGap)));
+    }
     dirty = true;
 }
 
@@ -1717,7 +1909,18 @@ void service()
 
     if (transition.running()) { transition.step(dt); animating = true; }
 
+    // One spring shape for every travelling plate on the local screens.
     if (!settings_marker.settled()) { settings_marker.step(dt, 24.f, 0.8f); animating = true; }
+    if (!debug_settings_marker.settled()) { debug_settings_marker.step(dt, 24.f, 0.8f); animating = true; }
+    if (!debug_marker.settled()) { debug_marker.step(dt, 24.f, 0.8f); animating = true; }
+    if (!chime_marker_x.settled()) { chime_marker_x.step(dt, 24.f, 0.8f); animating = true; }
+    if (!chime_marker_y.settled()) { chime_marker_y.step(dt, 24.f, 0.8f); animating = true; }
+    // The volume meter follows the stored value rather than the keypress, so a
+    // host-side or restored change lights the same blocks the same way.
+    if (current == Screen::Settings) {
+        settings_level.to(model::state.sound_volume / 10.f);
+        if (!settings_level.settled()) { settings_level.step(dt, 26.f, 0.85f); animating = true; }
+    }
 
     // A settled deck is fully static. Status does not request idle frames.
     for (int i = 0; i < kCellCount; ++i) {
@@ -1898,6 +2101,8 @@ void debug_settings_move(int delta)
 {
     debug_settings_row = (debug_settings_row + delta + kDebugSettingsRows)
                        % kDebugSettingsRows;
+    debug_settings_marker.to(
+        static_cast<float>(debug_settings_row * kDebugSettingsPitch));
     dirty = true;
 }
 
@@ -1926,17 +2131,20 @@ bool developer_preview_active() { return developer_preview != DeveloperPreview::
 void debug_move(int delta)
 {
     debug_row = (debug_row + delta + kDebugRows) % kDebugRows;
+    debug_marker.to(static_cast<float>(debug_row * kDebugPitch));
     dirty = true;
 }
 
 void chime_move(int dx, int dy)
 {
     int index = model::state.startup_chime;
-    const int row = index / 5;
-    const int col = index % 5;
+    const int row = index / kChimeCols;
+    const int col = index % kChimeCols;
     const int next_row = (row + dy + 2) % 2;
-    const int next_col = (col + dx + 5) % 5;
-    model::state.startup_chime = static_cast<uint8_t>(next_row * 5 + next_col);
+    const int next_col = (col + dx + kChimeCols) % kChimeCols;
+    model::state.startup_chime = static_cast<uint8_t>(next_row * kChimeCols + next_col);
+    chime_marker_x.to(static_cast<float>(next_col * (kChimeCellW + kChimeGap)));
+    chime_marker_y.to(static_cast<float>(next_row * (kChimeCellH + kChimeGap)));
     dirty = true;
 }
 

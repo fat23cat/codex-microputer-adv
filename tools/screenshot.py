@@ -12,7 +12,8 @@ import sys
 import time
 import zlib
 
-SCENES = ("splash", "pairing", "deck", "recording", "composer", "settings", "debug")
+SCENES = ("splash", "pairing", "deck", "recording", "composer", "settings",
+          "debug", "chime", "status", "signal")
 CAPTURE_CHOICES = ("live", *SCENES)
 
 

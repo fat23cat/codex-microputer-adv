@@ -19,6 +19,15 @@ def forbid(path: str, pattern: str, message: str) -> None:
         failures.append(message)
 
 
+def forbid_within(path: str, start: str, end: str, pattern: str, message: str) -> None:
+    text = (ROOT / path).read_text()
+    section = re.search(start + r"[\s\S]*?" + end, text, re.MULTILINE)
+    if section is None:
+        failures.append(message + " (section not found)")
+    elif re.search(pattern, section.group(0), re.MULTILINE):
+        failures.append(message)
+
+
 require("main/model.h", r"status_debounce_ms\s*=\s*100;", "default debounce must be 100 ms")
 require("main/model.h", r"status_audio_offset_ms\s*=\s*200;", "default audio offset must be +200 ms")
 require("main/store.cpp", r'"audio_of3"', "current NVS audio-offset key must be audio_of3")
@@ -104,6 +113,120 @@ require("main/audio.cpp",
 require("main/audio.cpp",
         r"CCP_CHIME_READY[\s\S]{0,500}playing_buffer\.store\(0,[\s\S]{0,160}playRaw\(status_pcm\[0\]",
         "startup chime buffer must be reserved before speaker DMA can consume it")
+require("main/audio.cpp",
+        r"float voice_gain\(float hz\)[\s\S]{0,200}"
+        r"if \(f >= kLoudRef\) return 1\.f;[\s\S]{0,80}"
+        r"return std::pow\(kLoudRef / f, 0\.75f\);",
+        "every voice must be corrected for the register it sits in: this "
+        "speaker radiates almost nothing low, so equal level is not equal "
+        "loudness")
+forbid_within("main/audio.cpp", r"for \(size_t i = 0; i < kStatusLen; \+\+i\)",
+              r"CCP_AUDIO\|status=", r"voice_gain\(",
+              "register correction must be worked out before the sample loop, "
+              "never inside it: it is a std::pow per call")
+require("main/audio.cpp",
+        r"void trim_to_peak\(int16_t\* pcm, size_t len, float peak, float target\)"
+        r"[\s\S]{0,260}factor = target \* 32700\.f / \(peak \* kRawScale\);",
+        "a score's peak is only known once it is rendered, so its trim must "
+        "be a second pass, not a fixed output scale")
+require("main/audio.cpp",
+        r"kPeakAttention = 0\.95f;[\s\S]{0,120}kPeakDone      = 0\.95f;"
+        r"[\s\S]{0,60}kPeakError     = 0\.92f;[\s\S]{0,60}kPeakRunning   = 0\.80f;"
+        r"[\s\S]{0,60}kPeakIdle      = 0\.55f;",
+        "the loudness hierarchy between cues must live in one place: a "
+        "request and a result own the room, work in progress sits under them")
+require("main/audio.cpp",
+        r"trim_to_peak\(output, kStatusLen, peak, target_peak\);",
+        "every status score must be trimmed to its target peak")
+require("main/audio.cpp",
+        r"trim_to_peak\(thock_pcm, kThockLen, peak, kPeakThock\);",
+        "the key press must be trimmed to its target peak")
+require("main/audio.cpp",
+        r"trim_to_peak\(status_pcm\[0\], kBootLen, peak, kPeakChime\);",
+        "the startup chime must be trimmed to its target peak")
+require("main/audio.cpp",
+        r"kAskSteps\[4\] = \{[\s\S]{0,200}\{1\.f,\s*\{1\.f, 1\.5f,\s*1\.25f\},\s*false\},[\s\S]{0,180}"
+        r"\{0\.8f,\s*\{1\.f, 1\.3333f, 1\.125f\},\s*false\},[\s\S]{0,200}"
+        r"\{1\.2f,\s*\{1\.f, 1\.5f,\s*1\.3333f\}, true\},[\s\S]{0,200}"
+        r"\{0\.8889f,\s*\{1\.f, 1\.25f,\s*1\.125f\},\s*false\},",
+        "a series of input requests must walk one four-chord progression, "
+        "peaking on the third step and leaning back on the fourth")
+require("main/audio.cpp",
+        r"ask_step = static_cast<uint8_t>\(\(ask_step \+ 1\) & 3\);",
+        "each input request must take the next step of the progression")
+require("main/audio.cpp",
+        r"if \(last_ask_us == 0 \|\| now_us - last_ask_us > kSeriesGapUs\) \{\s*\n"
+        r"\s*ask_step = 0;\s*\n\s*series_pitch = pitch;",
+        "the key must be held for a whole series and rolled only once it has "
+        "gone quiet: four chords in four keys are not a progression")
+forbid_within("main/audio.cpp", r"for \(size_t i = 0; i < kStatusLen; \+\+i\)",
+              r"CCP_AUDIO\|status=", r"ask_step|last_ask_us|series_pitch",
+              "the progression step must be chosen once per score, outside "
+              "the sample loop")
+require("main/audio.cpp",
+        r"const float anchor = 220\.f \* series_pitch \* step\.chord_mult;[\s\S]{0,60}"
+        r"pad_root    = anchor;[\s\S]{0,320}"
+        r"call_root   = anchor \* 1\.5f \* step\.notes\[0\];[\s\S]{0,90}"
+        r"mid_note    = anchor \* 1\.5f \* step\.notes\[1\];[\s\S]{0,90}"
+        r"answer_note = anchor \* 1\.5f \* step\.notes\[2\];",
+        "the input cue must speak a fifth above its chord, where completion "
+        "never goes, and never from the bell's octave")
+require("main/audio.cpp",
+        r"if \(ask_shimmer && on2 < kAskSpan \* kShimmerTau\)",
+        "only the peak of the progression may be lit: a glint on every ask is "
+        "just a bright cue")
+require("main/audio.cpp",
+        r"inline float ask_voice\(float freq, float onset, float t, float tau\)"
+        r"[\s\S]{0,400}fast_sin\(phase\) \+ fast_sin\(phase \* 3\.f\) \* 0\.13f\)\s*\n"
+        r"\s*\* attack \* attack \* decay;",
+        "the input cue must be hollow where the completion bell is glassy: "
+        "odd harmonics only, no octave partial, and a squared attack")
+forbid_within("main/audio.cpp", r"inline float ask_voice",
+              r"^\}", r"phase \* 2\.f",
+              "the input voice must not carry the bell's octave partial: that "
+              "is what made a request sound like a result")
+require("main/audio.cpp",
+        r"kMidAt     = 0\.068f;\s*\nconstexpr float kAnswerAt  = 0\.255f;",
+        "the input phrase must be speech, not the bell's even roll: two notes "
+        "close together, then a gap before the one it settles on")
+require("main/audio.cpp",
+        r"v = ask_voice\(call_root, kAskAttack, on1, kCallTau\) \* 0\.34f \* g_call;[\s\S]{0,200}"
+        r"v \+= ask_voice\(mid_note, kAskAttack, on2, kMidTau\) \* 0\.28f \* g_mid;[\s\S]{0,1300}"
+        r"v \+= ask_voice\(answer_note, kAnswerAttack, on3,\s*\n"
+        r"\s*kAnswerTau\) \* 0\.17f \* g_answer;",
+        "the input cue must be three notes, each quieter than the one before, "
+        "sharing one voice")
+require("main/audio.cpp",
+        r"kAnswerAttack = 0\.038f;",
+        "the last input note must open far more slowly than the two that "
+        "reach it: it is the highest, and it is the one left ringing")
+require("main/audio.cpp",
+        r"const float on2 = gesture_t - kMidAt;\s*\n"
+        r"\s*const float on3 = gesture_t - kAnswerAt;",
+        "the input notes must ring together, never cut each other off")
+require("main/audio.cpp",
+        r"const float phase = 6\.28318f \* freq \* t;",
+        "no input note may bend its pitch: a rising leading tone on a pure "
+        "tone is a whine, and the figure asks by where it stops instead")
+forbid_within("main/audio.cpp", r"\} else if \(cue == Cue::Attention\)",
+              r"\} else if \(cue == Cue::Error\)",
+              r"lfo_next|pad_bed|raw_pulse|kAskStep|recede",
+              "the input cue must not gate, pulse or repeat its bed: that is "
+              "what turns a request into nagging")
+require("main/audio.cpp",
+        r"bed_phase = 6\.28318f \* pad_root \* cue_t;[\s\S]{0,120}"
+        r"fast_sin\(bed_phase\) \* 0\.044f \* g_ask_bed_1[\s\S]{0,110}"
+        r"fast_sin\(bed_phase \* 1\.3333f\) \* 0\.032f \* g_ask_bed_2\) \* bed;",
+        "the input bed must be a quiet bare open fourth on the shared hold "
+        "envelope: a fifth would sit exactly on the phrase's first note")
+forbid("main/audio.cpp", r"tense_ratio|1\.4142f",
+       "no status cue may be built on a tritone")
+require("main/audio.cpp",
+        r"inline float fast_decay\(float x\)[\s\S]{0,400}decay_table\[index \+ 1\] - decay_table\[index\]",
+        "envelope decay must come from an interpolated table")
+forbid_within("main/audio.cpp", r"for \(size_t i = 0; i < kStatusLen; \+\+i\)", r"CCP_AUDIO\|status=",
+              r"std::(exp|sin|cos|tan|pow|floor|fmod)\(",
+              "the status score must render without libm on its per-sample path")
 require("main/audio.cpp",
         r"kStatusChannel\s*=\s*0[\s\S]{0,80}kInterfaceChannel\s*=\s*1",
         "status and interface sounds must use separate hardware mixer channels")
@@ -198,9 +321,21 @@ require("main/ble_transport.cpp",
 require("main/ble_transport.cpp",
         r"adaptive_ble::weak_signal[\s\S]{0,180}ui::invalidate",
         "RSSI hysteresis must repaint when weak-link state changes")
+require("main/theme.h", r"kSignalStripW\s*=\s*2 \* kCellPitchX",
+        "the weak-link annunciator must span exactly two task columns")
 require("main/ui.cpp",
-        r"ble_signal_weak[\s\S]{0,500}fill_rect\(badge_x, badge_y, badge_w, badge_h, kInk\)[\s\S]{0,180}LOW SIGNAL",
-        "weak BLE must use a compact dark text badge rather than an icon")
+        r"ble_signal_weak[\s\S]{0,900}fill_rect\(x, 0, kSignalStripW, kSignalStripH, kInk\)"
+        r"[\s\S]{0,700}SIGNAL",
+        "weak BLE must be a grid-aligned corner annunciator, not a floating badge")
+require("main/ui.cpp",
+        r"for \(int bar = 0; bar < 3; \+\+bar\) \{[\s\S]{0,220}"
+        r"bar == 0 \? kVerm : spent\);[\s\S]{0,260}"
+        r"if \(bar > 0\) fill_rect\(bx \+ 1, by \+ 1, 1, height - 2, kInk\);",
+        "the weak-link annunciator must show the state as a meter with one "
+        "bar lit, and must draw the spent bars rather than omit them")
+require("main/ui.cpp",
+        r"const int right = weak_link \? kScreenW - kSignalStripW - 5 : 225;",
+        "the critical battery readout must step aside for the annunciator")
 require("tools/install.py",
         r"select_ota\(a\.port,\s*label,\s*\"115200\"\)[\s\S]{0,180}installed and launched",
         "M5Apps installer must select and launch the flashed OTA app without a manual picker")
@@ -258,6 +393,39 @@ require("main/ui.cpp",
 require("main/ui.cpp",
         r"now - lighting_changed_ms >= kDimHoldMs[\s\S]{0,180}configured / 10",
         "host auto-dim must use the same three-minute readable hold")
+
+require("main/theme.h", r"kOrdinal\s*=\s*rgb\(171,\s*168,\s*157\)",
+        "row ordinals must use their own tone between rule and label type")
+require("main/ui.cpp",
+        r"void draw_selection_plate\([\s\S]{0,220}rows\(false\)[\s\S]{0,120}fill_rect\([\s\S]{0,60}kInk\)[\s\S]{0,60}clip\([\s\S]{0,60}rows\(true\)[\s\S]{0,40}unclip",
+        "list inversion must be clipped to the travelling plate, not coloured per row")
+require("main/ui.cpp",
+        r"void draw_segment_meter\([\s\S]{0,600}fill_rect\(x, y \+ kSegH - 2, kSegW, 2, seat\)",
+        "an empty meter step must keep a seat so the full range stays visible")
+require("main/ui.cpp",
+        r"SettingsRow::Volume\)[\s\S]{0,200}draw_segment_meter\(value_right, meter_y, 10, settings_level\.x",
+        "volume must be a ten-step segment meter driven by its own spring")
+require("main/ui.cpp",
+        r"SettingsRow::BleProfile\)[\s\S]{0,200}draw_segment_selector\(value_right, meter_y, 3, s\.ble_profile",
+        "the host channel must be a one-of-three segment selector")
+require("main/ui.cpp",
+        r"glow = 1\.f - motion::ease_out_cubic\(cell_press\[i\] / kPressTime\)",
+        "key press feedback must attack instantly and ease out")
+require("main/ui.cpp",
+        r"chime_marker_x\.to\([\s\S]{0,140}chime_marker_y\.to\(",
+        "the chime grid selection must travel on two springs")
+require("tools/screenshot.py", r'"debug", "chime", "status", "signal"',
+        "the chime, status and weak-link screens must be capturable scenes")
+require("main/firmware.h", r"esp_app_get_description\(\)->version",
+        "the running firmware version must have exactly one accessor")
+forbid("main/main.cpp", r"esp_app_get_description\(\)",
+       "main must read the firmware version through firmware.h")
+require("main/ui.cpp",
+        r"firmware::version\(\)[\s\S]{0,300}"
+        r"mix\(kPaper, kDim,\s*\n\s*static_cast<uint8_t>\(motion::clamp01\(intro\) \* 92\.f\)\);\s*\n"
+        r"\s*draw_tracked_right\(build, kScreenW - 26, 12, 0, stamp, kPaper\);",
+        "the splash's build stamp belongs in the trim with the registration "
+        "marks: tight against the corner mark and faded towards the paper")
 
 require("main/codex_micro_protocol.cpp", r"rpc_framer::Assembler usb_input;[\s\S]{0,120}rpc_framer::Assembler ble_input;", "USB and BLE must not share partial RPC state")
 require("main/codex_micro_protocol.cpp", r"xQueueCreateStatic[\s\S]{0,1200}xQueueReceive", "protocol callbacks must hand reports to main task")

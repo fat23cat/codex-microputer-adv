@@ -32,6 +32,9 @@ constexpr uint16_t kIdleDigit = rgb(142, 138, 128); // quiet inactive numeral
 constexpr uint16_t kIdleDigitSelected = rgb(78, 76, 71); // selected idle, never black
 constexpr uint16_t kViewed = rgb(228, 229, 225);  // near-paper neutral: completed, viewed
 constexpr uint16_t kDim   = rgb(142, 138, 128);   // chrome type
+// Row ordinals sit one step below label type: quiet enough to stay a reference
+// mark, dark enough to survive the 10 % dim level that swallows kRule.
+constexpr uint16_t kOrdinal = rgb(171, 168, 157);
 // A lighter tint is the first thing to disappear at 10 % brightness, and the
 // layout depends on this rule being visible.
 constexpr uint16_t kRule  = rgb(201, 198, 187);
@@ -65,6 +68,11 @@ constexpr int kGridW = kScreenW;
 constexpr int kGridH = kCellH;
 constexpr int kGridX = 0;
 constexpr int kGridY = 0;
+
+// The weak-link annunciator belongs to the deck grid rather than floating over
+// it: exactly two task columns wide, flush with the top and right edges.
+constexpr int kSignalStripW = 2 * kCellPitchX;
+constexpr int kSignalStripH = 13;
 
 constexpr int kRuleY   = 112;
 constexpr int kChromeY = 120;    // Font0, 6x8, +1 px tracking
