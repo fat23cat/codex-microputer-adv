@@ -90,6 +90,10 @@ float composer_lamp_age = 99.f;
 // jumps -- the same reason every marker on the device is a spring.
 motion::Spring composer_knob_angle;
 motion::Spring composer_key_press;
+// A confirmed selection closes the host's picker, so the page follows it out.
+// It waits out the keycap travel first: closing on the same frame as the press
+// threw the object away before the user saw it move.
+float composer_confirm_age = -1.f;
 constexpr float kDetentRadians = 0.5236f;   // 30 degrees: twelve flutes, one per detent
 float marquee_hold = 0.f;
 int   marquee_dir  = 1;
@@ -721,25 +725,9 @@ void draw_voice_takeover()
     canvas.setTextDatum(textdatum_t::top_left);
 }
 
-// ---------------------------------------------------- composer control preview
-// Codex Micro expresses composer controls through temporary light previews. Mirror the
-// recording takeover exactly: the selected tower becomes the whole surface,
-// its existing numeral remains the spatial anchor, and copy uses the same
-// type scale and vertical rhythm. Never label it as reasoning: the same dial
-// can own navigation, scrolling, or a custom action.
-// A filled ellipse, used only for the isometric knob's faces. LovyanGFX has
-// fillEllipse but not through the layer offset, and the knob needs the same
-// scanline shape for its top face, its shadow and its inner cap.
-void draw_ellipse(int cx, int cy, int rx, int ry, uint16_t c)
-{
-    for (int dy = -ry; dy <= ry; ++dy) {
-        const float t = static_cast<float>(dy) / static_cast<float>(ry);
-        const int half = static_cast<int>(rx * std::sqrt(std::max(0.f, 1.f - t * t)));
-        fill_rect(cx - half, cy + dy, 1, 1, c);
-        fill_rect(cx + half, cy + dy, 1, 1, c);
-    }
-}
-
+// A filled ellipse, used only by the instrument on the control page.
+// LovyanGFX has fillEllipse but not through the layer offset, and the knob
+// needs the same scanline shape for its cap, its base and its light ring.
 void fill_ellipse(int cx, int cy, int rx, int ry, uint16_t c)
 {
     for (int dy = -ry; dy <= ry; ++dy) {
@@ -750,97 +738,132 @@ void fill_ellipse(int cx, int cy, int rx, int ry, uint16_t c)
     }
 }
 
-// The dial, drawn as the object it is. A flat marker cannot show which way the
-// hand turned; a fluted cylinder can, because the flutes carry the angle. The
-// knob is pixel isometric to match the deck's own flat, un-shaded language:
-// two solid faces, no gradient, no anti-aliasing.
-void draw_iso_knob(int cx, int cy, float angle, uint16_t base, float copy)
+void draw_ellipse(int cx, int cy, int rx, int ry, uint16_t c)
 {
-    constexpr int kRx = 30;
-    constexpr int kRy = 12;
-    constexpr int kWall = 11;
-
-    const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
-    const uint16_t wall = mix(base, kPaper, static_cast<uint8_t>(ink * 0.30f));
-    const uint16_t face = mix(base, kPaper, static_cast<uint8_t>(ink * 0.13f));
-    const uint16_t edge = mix(base, kPaper, static_cast<uint8_t>(ink * 0.80f));
-    const uint16_t mark = mix(base, kPaper, ink);
-
-    // Side wall first: the top face is drawn over its upper half.
-    fill_ellipse(cx, cy + kWall, kRx, kRy, wall);
-    fill_rect(cx - kRx, cy, kRx * 2 + 1, kWall, wall);
-    fill_ellipse(cx, cy, kRx, kRy, face);
-
-    draw_ellipse(cx, cy, kRx, kRy, edge);
-
-    // Flutes. Twelve of them, one per detent, so a single click visibly walks
-    // the pattern by exactly one flute rather than smearing. They are knurling
-    // on the rim, not spokes: they stay in the outer band and continue down the
-    // near half of the wall, which is what makes the cylinder read as solid.
-    for (int k = 0; k < 12; ++k) {
-        const float a = angle + static_cast<float>(k) * kDetentRadians;
-        const float ca = std::cos(a), sa = std::sin(a);
-        const int rim_x = cx + static_cast<int>(kRx * ca);
-        const int rim_y = cy + static_cast<int>(kRy * sa);
-        const int in_x  = cx + static_cast<int>(kRx * 0.84f * ca);
-        const int in_y  = cy + static_cast<int>(kRy * 0.84f * sa);
-        canvas.drawLine(in_x + layer_dx, in_y, rim_x + layer_dx, rim_y, edge);
-        if (sa > 0.05f)  // only the near half of the wall is facing us
-            vline(rim_x, rim_y, static_cast<int>(kWall * sa) + 1, edge);
+    for (int dy = -ry; dy <= ry; ++dy) {
+        const float t = static_cast<float>(dy) / static_cast<float>(ry);
+        const int half = static_cast<int>(rx * std::sqrt(std::max(0.f, 1.f - t * t)));
+        fill_rect(cx - half, cy + dy, 1, 1, c);
+        fill_rect(cx + half, cy + dy, 1, 1, c);
     }
-
-    // The cap, and on it the pointer. The pointer travels with the body, so the
-    // eye reads absolute rotation and not just motion.
-    fill_ellipse(cx, cy, static_cast<int>(kRx * 0.66f),
-                 static_cast<int>(kRy * 0.66f), wall);
-    draw_ellipse(cx, cy, static_cast<int>(kRx * 0.66f),
-                 static_cast<int>(kRy * 0.66f), edge);
-    const float pa = angle - 1.5708f;
-    fill_rect(cx + static_cast<int>(kRx * 0.40f * std::cos(pa)) - 2,
-              cy + static_cast<int>(kRy * 0.40f * std::sin(pa)) - 2, 4, 4, mark);
 }
 
-// The `\` key, same projection, same two faces. It sits beside the knob because
-// the pair of them is the whole control: turn, then select.
-void draw_iso_key(int cx, int cy, float press, uint16_t base, float copy)
-{
-    constexpr int kHalfW = 23;
-    constexpr int kHalfH = 12;
-    const int wall = 9 - static_cast<int>(motion::clamp01(press) * 6.f);
-    const int top  = cy - static_cast<int>(motion::clamp01(press) * 3.f);
+// The dial, drawn as the object that is actually under the user's fingers.
+// Codex Micro is Work Louder hardware: the encoder is a straight machined
+// cylinder with a flat top, fine knurling around the wall and a light ring at
+// its base. So the knurling belongs on the wall, not radiating across the cap,
+// the silhouette has no taper, and the ring is not decoration -- it carries the
+// host's own lamp colour, which is the only thing the device truthfully knows
+// about the surface being adjusted.
+constexpr int kKnobRx   = 33;
+constexpr int kKnobRy   = 13;
+constexpr int kKnobWall = 17;
 
+void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
+               float glow_level, float copy)
+{
     const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
-    const uint16_t side = mix(base, kPaper, static_cast<uint8_t>(ink * 0.30f));
-    const uint16_t face = mix(base, kPaper, static_cast<uint8_t>(ink * 0.13f));
-    const uint16_t edge = mix(base, kPaper, static_cast<uint8_t>(ink * 0.80f));
+    const uint16_t wall = mix(base, kInk,  static_cast<uint8_t>(copy * 46.f));
+    const uint16_t cap  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.22f));
+    const uint16_t knur = mix(base, kPaper, static_cast<uint8_t>(ink * 0.44f));
+    const uint16_t edge = mix(base, kPaper, static_cast<uint8_t>(ink * 0.86f));
     const uint16_t mark = mix(base, kPaper, ink);
 
-    for (int pass = 0; pass < 2; ++pass) {
-        const int oy = pass == 0 ? wall : 0;
-        const uint16_t c = pass == 0 ? side : face;
-        for (int dy = -kHalfH; dy <= kHalfH; ++dy) {
-            const int half = kHalfW - kHalfW * std::abs(dy) / kHalfH;
-            hline(cx - half, top + dy + oy, half * 2 + 1, c);
-        }
-        if (pass == 0)
-            fill_rect(cx - kHalfW, top, kHalfW * 2 + 1, wall + 1, side);
+    // Light ring first: the body is drawn over it, so what survives is a rim of
+    // colour bleeding out from under the base, exactly as it does in aluminium.
+    const int ring_y = cy + kKnobWall;
+    const uint16_t lit = mix(base, glow,
+        static_cast<uint8_t>(copy * (0.30f + 0.70f * motion::clamp01(glow_level)) * 255.f));
+    fill_ellipse(cx, ring_y + 1, kKnobRx + 3, kKnobRy + 1, mix(base, lit, 170));
+    fill_ellipse(cx, ring_y, kKnobRx + 1, kKnobRy, lit);
+
+    // Body: bottom cap, straight wall, flat top. No taper, no shading ramp.
+    fill_ellipse(cx, ring_y, kKnobRx, kKnobRy, wall);
+    fill_rect(cx - kKnobRx, cy, kKnobRx * 2 + 1, kKnobWall, wall);
+    fill_ellipse(cx, cy, kKnobRx, kKnobRy, cap);
+    draw_ellipse(cx, cy, kKnobRx, kKnobRy, edge);
+    vline(cx - kKnobRx, cy, kKnobWall, edge);
+    vline(cx + kKnobRx, cy, kKnobWall, edge);
+
+    // Knurling: twenty-four flutes around the wall, so one 30-degree detent
+    // walks the pattern by exactly two -- unmistakable, and never a blur.
+    for (int k = 0; k < 24; ++k) {
+        const float a = angle + static_cast<float>(k) * (kDetentRadians * 0.5f);
+        const float sa = std::sin(a);
+        if (sa <= 0.08f) continue;          // only the near half of the wall
+        const int x = cx + static_cast<int>(kKnobRx * std::cos(a));
+        const int y = cy + static_cast<int>(kKnobRy * sa);
+        vline(x, y, kKnobWall - static_cast<int>((1.f - sa) * 3.f), knur);
+    }
+
+    // The index. A notch cut through the wall plus a bar on the cap: together
+    // they give absolute angle, not just evidence that something moved.
+    const float sa = std::sin(angle);
+    const int ix = cx + static_cast<int>(kKnobRx * std::cos(angle));
+    const int iy = cy + static_cast<int>(kKnobRy * sa);
+    if (sa > 0.f) fill_rect(ix - 1, iy, 3, kKnobWall, mark);
+    fill_rect(cx + static_cast<int>(kKnobRx * 0.62f * std::cos(angle)) - 1,
+              cy + static_cast<int>(kKnobRy * 0.62f * sa) - 1, 3, 3, mark);
+}
+
+// The `\` keycap, in the same projection: a real cube with three distinct
+// faces. A single flat band read as a sticker; the eye needs the left and
+// right walls to differ before it accepts the object as solid.
+void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
+{
+    constexpr int kHalfW = 27;
+    constexpr int kHalfH = 14;
+    constexpr int kWall  = 13;
+
+    const float down = motion::clamp01(press);
+    const int wall = kWall - static_cast<int>(down * 7.f);
+    const int top  = cy - static_cast<int>(down * 2.f);
+
+    const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
+    const uint16_t shade = mix(base, kInk,  static_cast<uint8_t>(copy * 70.f));
+    const uint16_t left  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.16f));
+    const uint16_t right = mix(base, kPaper, static_cast<uint8_t>(ink * 0.34f));
+    const uint16_t face  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.62f));
+    const uint16_t edge  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.92f));
+    const uint16_t mark  = mix(face, kInk,  static_cast<uint8_t>(copy * 235.f));
+
+    // Contact shadow: it tightens as the cap goes down, which is most of what
+    // sells the travel.
+    fill_ellipse(cx, top + kHalfH + wall + 3 - static_cast<int>(down * 2.f),
+                 kHalfW - 4 + static_cast<int>(down * 3.f), 3, shade);
+
+    // Walls, column by column along the two near edges of the diamond.
+    for (int dx = -kHalfW; dx <= kHalfW; ++dx) {
+        const int y = top + kHalfH - kHalfH * std::abs(dx) / kHalfW;
+        vline(cx + dx, y, wall + 1, dx < 0 ? left : right);
+    }
+    // Top face.
+    for (int dy = -kHalfH; dy <= kHalfH; ++dy) {
+        const int half = kHalfW - kHalfW * std::abs(dy) / kHalfH;
+        hline(cx - half, top + dy, half * 2 + 1, face);
     }
     canvas.drawLine(cx - kHalfW + layer_dx, top, cx + layer_dx, top - kHalfH, edge);
     canvas.drawLine(cx + layer_dx, top - kHalfH, cx + kHalfW + layer_dx, top, edge);
-    canvas.drawLine(cx - kHalfW + layer_dx, top + wall, cx + layer_dx, top + kHalfH + wall, edge);
+    canvas.drawLine(cx - kHalfW + layer_dx, top + wall,
+                    cx + layer_dx, top + kHalfH + wall, edge);
     canvas.drawLine(cx + layer_dx, top + kHalfH + wall,
                     cx + kHalfW + layer_dx, top + wall, edge);
     vline(cx - kHalfW, top, wall + 1, edge);
     vline(cx + kHalfW, top, wall + 1, edge);
 
-    // The backslash is drawn lying on the face, parallel to the near-left edge,
-    // so it reads as printed on the keycap instead of floating over it.
-    for (int i = 0; i < 3; ++i) {
-        canvas.drawLine(cx - 11 + layer_dx, top - 6 + i,
-                        cx + 11 + layer_dx, top + 4 + i, mark);
-    }
+    // The legend lies on the face, along the same axis as the near-left edge,
+    // so it reads as printed on the cap rather than floating above it.
+    for (int i = 0; i < 2; ++i)
+        canvas.drawLine(cx - 12 + layer_dx, top - 7 + i,
+                        cx + 12 + layer_dx, top + 5 + i, mark);
 }
 
+// ---------------------------------------------------- composer control preview
+// Codex Micro expresses composer controls through temporary light previews. The
+// page is the instrument, not a label for it: the dial and the key are drawn as
+// objects, the six agent lamps are mirrored where the six task cells were, and
+// nothing is named. The same dial can own navigation, scrolling, reasoning or a
+// custom action, and the device does not guess which.
 void draw_composer_control_takeover()
 {
     const float amount = motion::ease_in_out_cubic(
@@ -861,70 +884,83 @@ void draw_composer_control_takeover()
                                                  static_cast<float>(kScreenW), amount));
     fill_status_surface(x0, 0, x1 - x0, kScreenH, base, 255, 0, 30);
 
-    // The numeral stays the spatial anchor, but it now retreats to the header
-    // instead of owning the middle: the instrument is what the page is about.
+    // The numeral retreats to the corner at resting scale: it is the anchor
+    // saying which chat this dial is driving, not the subject of the page.
     const float resting_w = micro5_digits::kVisualWidth[0][slot];
     const float resting_h = micro5_digits::kVisualHeight[0][slot];
     const float resting_visual_x = source_x + (source_w - resting_w) / 2.f;
     const float resting_visual_y = kDigitSelectedBottom - resting_h;
-    const float resting_source_x = resting_visual_x - micro5_digits::kLeft[0][slot];
-    const float resting_source_y = resting_visual_y - micro5_digits::kTop[0][slot];
     draw_micro5_digit(slot,
-        motion::lerp(resting_source_x, 12.f - micro5_digits::kLeft[0][slot], amount),
-        motion::lerp(resting_source_y, 5.f - micro5_digits::kTop[0][slot], amount),
+        motion::lerp(resting_visual_x - micro5_digits::kLeft[0][slot],
+                     10.f - micro5_digits::kLeft[0][slot], amount),
+        motion::lerp(resting_visual_y - micro5_digits::kTop[0][slot],
+                     7.f - micro5_digits::kTop[0][slot], amount),
         1.f, kPaper);
 
     const float copy = motion::ease_out_cubic((amount - 0.55f) / 0.45f);
     if (copy <= 0.f) return;
-    const uint16_t text = mix(base, kPaper, static_cast<uint8_t>(copy * 255.f));
-    const uint16_t faint = mix(base, kPaper, static_cast<uint8_t>(copy * 96.f));
-    draw_tracked_transparent("COMPOSER", 34, 6, 2, text);
+    const uint16_t text  = mix(base, kPaper, static_cast<uint8_t>(copy * 255.f));
+    const uint16_t faint = mix(base, kPaper, static_cast<uint8_t>(copy * 78.f));
 
-    // Six lamps, mirroring what Micro is showing right now. Until the host
-    // sends a preview frame they stay as empty wells: the device says "I do not
-    // know what this dial is editing" rather than inventing a scale.
-    constexpr int kLampX = 34;
-    constexpr int kLampPitch = 12;
-    constexpr int kLampW = 8;
-    for (int i = 0; i < kLampCount; ++i) {
-        const int lx = kLampX + i * kLampPitch;
-        if (composer_lamp_valid) {
-            const float level = motion::clamp01(composer_lamp_level[i].x);
-            const uint16_t lit = mix(base, composer_lamp_colour[i],
-                                     static_cast<uint8_t>(copy * 255.f));
-            fill_rect(lx, 20, kLampW, 5,
-                      mix(faint, lit, static_cast<uint8_t>(level * 255.f)));
-        } else {
-            fill_rect(lx, 20, kLampW, 1, faint);
-            fill_rect(lx, 24, kLampW, 1, faint);
-        }
-    }
-    if (composer_lamp_valid && composer_lamp_lit >= 0) {
-        const int mx = kLampX + static_cast<int>(
-            composer_lamp_marker.x * kLampPitch) + kLampW / 2;
-        fill_rect(mx - 1, 27, 3, 2, text);
-    }
-
-    // The instrument. Turning the dial rotates the knob by exactly one flute;
-    // the chevron on the side that moved lights for the length of the detent.
+    // The instrument. A detent leans the knob a little in the direction it
+    // turned and lights that side's chevron for the length of the detent.
     const float step = motion::clamp01(1.f - composer_control_step_age / 0.34f);
-    const float lean = composer_control_step_dir * step * 3.f;
-    draw_iso_knob(66 + static_cast<int>(lean), 74, composer_knob_angle.x, base, copy);
+    const int lean = static_cast<int>(composer_control_step_dir * step * 2.f);
+    const int lit_lamp = composer_lamp_lit >= 0 ? composer_lamp_lit : -1;
+    const uint16_t glow = (composer_lamp_valid && lit_lamp >= 0)
+        ? composer_lamp_colour[lit_lamp] : kPaper;
+    const float glow_level = (composer_lamp_valid && lit_lamp >= 0)
+        ? composer_lamp_level[lit_lamp].x : 0.f;
+    draw_knob(78 + lean, 48, composer_knob_angle.x, base, glow, glow_level, copy);
+
     for (int side = 0; side < 2; ++side) {
         const int dir = side == 0 ? -1 : 1;
         const bool hot = composer_control_step_dir == dir && step > 0.f;
         const uint16_t c = hot
-            ? mix(base, kPaper, static_cast<uint8_t>(copy * (80.f + step * 175.f)))
+            ? mix(base, kPaper, static_cast<uint8_t>(
+                  copy * std::min(255.f, 70.f + step * 185.f)))
             : faint;
-        const int ax = side == 0 ? 16 : 116;
-        for (int k = 0; k < 5; ++k)
-            vline(ax + dir * k, 74 - 4 + k / 2, 9 - k, c);
+        const int ax = side == 0 ? 28 : 128;
+        for (int k = 0; k < 6; ++k)
+            vline(ax + dir * k, 56 - 5 + k / 2, 11 - k, c);
     }
-    draw_iso_key(176, 72, composer_key_press.x, base, copy);
 
-    hline(16, 108, 208, mix(base, kPaper, static_cast<uint8_t>(copy * 60.f)));
-    draw_tracked_transparent("TURN", 66 - tracked_width("TURN", 2) / 2, 116, 2, text);
-    draw_tracked_transparent("SELECT", 176 - tracked_width("SELECT", 2) / 2, 116, 2, text);
+    draw_keycap(188, 48, composer_key_press.x, base, copy);
+
+    draw_tracked_transparent("TURN", 78 - tracked_width("TURN", 2) / 2, 88, 2, text);
+    draw_tracked_transparent("SELECT", 188 - tracked_width("SELECT", 2) / 2, 88, 2, text);
+
+    // The six agent lamps, mirrored from the host onto the exact columns the
+    // six task cells occupy. Until a preview frame arrives they are empty
+    // wells: the device says it does not know the scale rather than inventing
+    // one.
+    const int lamp_y = 108;
+    for (int i = 0; i < kLampCount; ++i) {
+        const int lx = cell_x(i);
+        const int lw = cell_w(i);
+        // A recessed well behind every lamp. Without it a host lamp that happens
+        // to be the same blue as this surface would simply vanish.
+        fill_rect(lx, lamp_y + 1, lw, 12, mix(base, kInk,
+                  static_cast<uint8_t>(copy * 64.f)));
+        fill_rect(lx, lamp_y + 13, lw, 1, faint);
+        if (!composer_lamp_valid) continue;
+        const float level = motion::clamp01(composer_lamp_level[i].x);
+        const uint16_t colour = mix(base, composer_lamp_colour[i],
+                                    static_cast<uint8_t>(copy * 255.f));
+        const int h = 2 + static_cast<int>(level * 10.f);
+        fill_rect(lx, lamp_y + 13 - h, lw, h,
+                  mix(mix(base, colour, 90), colour,
+                      static_cast<uint8_t>(level * 255.f)));
+    }
+    if (composer_lamp_valid && lit_lamp >= 0) {
+        const float m = composer_lamp_marker.x;
+        const int idx = std::clamp(static_cast<int>(m), 0, kLampCount - 1);
+        const int nxt = std::clamp(idx + 1, 0, kLampCount - 1);
+        const float f = m - static_cast<float>(idx);
+        const int mx = static_cast<int>(motion::lerp(
+            static_cast<float>(cell_x(idx)), static_cast<float>(cell_x(nxt)), f));
+        fill_rect(mx + cell_w(idx) / 2 - 3, lamp_y + 16, 7, 2, text);
+    }
 }
 
 // ---------------------------------------------------------------- announcement
@@ -1902,6 +1938,7 @@ void set_composer_control_active(bool active)
     composer_control_idle = active ? 0.f : 99.f;
     composer_control_step_age = 99.f;
     composer_control_step_dir = 0;
+    composer_confirm_age = -1.f;
     if (active) {
         composer_knob_angle.snap(0.f);
         composer_key_press.snap(0.f);
@@ -1961,6 +1998,7 @@ void notify_composer_control_select()
     composer_key_press.snap(1.f);
     composer_key_press.to(0.f);
     composer_control_idle = 0.f;
+    composer_confirm_age = 0.f;
     invalidate();
 }
 
@@ -2190,6 +2228,11 @@ void service()
         }
         // Mouse/keyboard confirmation on the Mac does not send an encoder
         // release back to the device. Never leave the overlay stuck forever.
+        if (composer_confirm_age >= 0.f) {
+            composer_confirm_age += dt;
+            animating = true;
+            if (composer_confirm_age >= 0.22f) dismiss_composer_control_preview();
+        }
         if (composer_control_idle >= 8.f) set_composer_control_active(false);
         else animating = true;
     }

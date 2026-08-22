@@ -664,8 +664,9 @@ void handle_press(const Press& press)
         // for a host light preview before presenting a local control UI.
         const bool had_preview = ui::composer_control_active();
         if (had_preview) {
+            // Confirming closes the host's picker, so the page leaves too --
+            // but only after the keycap has visibly travelled.
             ui::notify_composer_control_select();
-            ui::dismiss_composer_control_preview();
         } else {
             ui::allow_composer_control_preview();
         }

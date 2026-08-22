@@ -59,11 +59,10 @@ require("main/ui.cpp",
         r"composer_knob_angle\.to\(composer_knob_angle\.target\s*\+ composer_control_step_dir \* kDetentRadians\)",
         "each detent must advance the knob by exactly one flute")
 require("main/ui.cpp",
-        r"void draw_iso_knob\(int cx, int cy, float angle[\s\S]{0,2200}"
-        r"for \(int k = 0; k < 12; \+\+k\)",
-        "the dial must be drawn as a fluted isometric knob carrying its angle")
+        r"void draw_knob\(int cx, int cy, float angle",
+        "the dial must be drawn as the cylinder it physically is")
 require("main/ui.cpp",
-        r"void draw_iso_key\(int cx, int cy, float press",
+        r"void draw_keycap\(int cx, int cy, float press",
         "the select key must be drawn as an isometric keycap")
 require("main/ui.cpp",
         r"void note_composer_control_lamps\(const uint32_t\* rgb, const float\* level\)"
@@ -407,8 +406,18 @@ require("main/ui.cpp",
         r"Status::Done\)\s+return t\.unseen_done \? kInk : kIdleDigit[\s\S]{0,300}Status::Done && !t\.unseen_done",
         "viewed completed tasks must use the inactive grey digit scale")
 require("main/main.cpp",
-        r"had_preview[\s\S]{0,240}dismiss_composer_control_preview[\s\S]{0,160}else \{\s*ui::allow_composer_control_preview",
+        r"had_preview[\s\S]{0,300}notify_composer_control_select[\s\S]{0,160}else \{\s*ui::allow_composer_control_preview",
         "encoder press must explicitly toggle the composer control overlay")
+require("main/ui.cpp",
+        r"composer_confirm_age \+= dt;[\s\S]{0,140}"
+        r"if \(composer_confirm_age >= 0\.22f\) dismiss_composer_control_preview\(\)",
+        "a confirmed selection must let the keycap travel before the page leaves")
+require("main/ui.cpp",
+        r"for \(int k = 0; k < 24; \+\+k\)[\s\S]{0,500}vline\(x, y, kKnobWall",
+        "the knob must be knurled around its wall, like the Work Louder encoder")
+require("main/ui.cpp",
+        r"fill_ellipse\(cx, ring_y, kKnobRx \+ 1, kKnobRy, lit\)",
+        "the knob must carry the host lamp colour in its base light ring")
 require("main/ui.cpp",
         r"dismiss_composer_control_preview\(\)[\s\S]{0,180}suppressed_until_ms = lgfx::millis\(\) \+ 5000",
         "late host previews must not reopen an explicitly dismissed overlay")

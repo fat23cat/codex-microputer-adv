@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.1 — 2026-08-22
+
+- Redrew the dial to the shape of the real one. Codex Micro is Work Louder
+  hardware: the encoder is a straight machined cylinder with a flat top, fine
+  knurling around the wall and a light ring at its base. The first attempt had
+  the knurling radiating across the cap like spokes and almost no wall, which
+  is a different object. The knurling is now 24 flutes on the wall so a
+  30-degree detent walks it by exactly two, the silhouette has no taper, and
+  the index is a notch through the wall plus a bar on the cap.
+- The base light ring carries the host's own lamp colour and brightness. It is
+  the one place on the page where the device is allowed to be expressive,
+  because the colour is not invented -- it is what Micro is showing.
+- Dropped the COMPOSER wordmark. The page is the instrument; naming it added a
+  label to a surface whose meaning the device deliberately does not claim.
+- Rebuilt the keycap as a real cube with three distinct faces, a contact shadow
+  that tightens as it travels, and the legend lying along the isometric axis.
+  One flat band with a diagonal on it read as a sticker, not an object.
+- Confirming no longer makes the page vanish under the finger. The host does
+  close its picker on click, so leaving is correct, but the page now waits out
+  the 0.22 s of keycap travel first.
+- The six agent lamps moved to the columns the six task cells occupy, each in a
+  recessed well so a host lamp that happens to be this surface's own blue still
+  reads.
+
 ## 0.8.0 — 2026-08-22
 
 - The dial now opens its own surface. Turning the knob used to show nothing
