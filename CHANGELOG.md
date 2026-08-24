@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.1 — 2026-08-22
+
+- The keycap was a concertina. Stacked inside the keyline it had a moulding
+  line under the far edges and, before that, a filled dish; three parallel
+  edges around a barely tapered slab read as pleats. There is now one line on
+  the top face -- where it meets the walls -- and nothing else.
+- Given the profile of the thing it is: a tall Cherry-like cap, small top, wide
+  base, strongly tapered walls. It was a flat slab pretending.
+- The lamp row is gone. In this mode the host's pattern is its own UI state,
+  not six agent statuses, so a row of them under the instrument said nothing a
+  reader could use. The frame is still mirrored -- for its colour, which goes
+  into the knob's base ring, the object actually being turned. The instrument
+  now has the whole height and centres in it.
+
 ## 0.9.0 — 2026-08-22
 
 - Escape now asks the host to drop its surface instead of only hiding the page.

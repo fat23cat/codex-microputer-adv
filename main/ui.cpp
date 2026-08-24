@@ -735,16 +735,6 @@ void fill_ellipse(int cx, int cy, int rx, int ry, uint16_t c)
     }
 }
 
-void draw_ellipse(int cx, int cy, int rx, int ry, uint16_t c)
-{
-    for (int dy = -ry; dy <= ry; ++dy) {
-        const float t = static_cast<float>(dy) / static_cast<float>(ry);
-        const int half = static_cast<int>(rx * std::sqrt(std::max(0.f, 1.f - t * t)));
-        fill_rect(cx - half, cy + dy, 1, 1, c);
-        fill_rect(cx + half, cy + dy, 1, 1, c);
-    }
-}
-
 // The dial, drawn as the object that is actually under the user's fingers.
 // Codex Micro is Work Louder hardware: the encoder is a straight machined
 // cylinder with a flat top, fine knurling around the wall and a light ring at
@@ -830,10 +820,10 @@ int cap_half(int dy, int half_w, int half_h)
     return std::min(d, half_w - 2);                     // left and right tips
 }
 
-constexpr int kCapW     = 28;
-constexpr int kCapH     = 14;
-constexpr int kCapWall  = 13;
-constexpr int kCapFlare = 2;   // a keycap is wider at the plate than at the top,
+constexpr int kCapW     = 22;
+constexpr int kCapH     = 11;
+constexpr int kCapWall  = 17;
+constexpr int kCapFlare = 8;   // a keycap is wider at the plate than at the top,
                                // and that taper is most of what tells the eye it
                                // is a key and not a box
 
@@ -874,15 +864,14 @@ void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
     const uint16_t left  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.14f));
     const uint16_t right = mix(base, kPaper, static_cast<uint8_t>(ink * 0.38f));
     const uint16_t face  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.66f));
-    const uint16_t rim   = mix(base, kPaper, static_cast<uint8_t>(ink * 0.86f));
     const uint16_t brk   = mix(base, kPaper, static_cast<uint8_t>(ink * 0.48f));
     const uint16_t key   = mix(base, kPaper, ink);
     const uint16_t mark  = mix(face, kInk,  static_cast<uint8_t>(copy * 190.f));
 
     // Contact shadow, tightening as the cap goes down. Most of what sells the
     // travel is the shadow, not the two pixels the cap actually moves.
-    fill_ellipse(cx, top + kCapH + wall + 2,
-                 kCapW - 4 + static_cast<int>(down * 3.f), 3, shade);
+    fill_ellipse(cx, top + kCapH + wall + 3,
+                 kCapW + kCapFlare - 3 + static_cast<int>(down * 3.f), 3, shade);
 
     const int first = -kCapH - kOutline;
     const int last  = kCapH + kCapFlare + wall + kOutline;
@@ -903,23 +892,14 @@ void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
         hline(cx - half, top + dy, half, left);
         hline(cx, top + dy, half + 1, right);
     }
-    // The top face is one flat tone. It had a filled dish before, and at this
-    // size the dish was most of the cap: what read was a tray with a bright rim
-    // around it, not a solid key. The moulding is now stated by a single line
-    // under the two far edges -- enough to break the plane, small enough to
-    // leave the face whole.
+    // The top face is one flat tone, and the only line on it is where it meets
+    // the walls. It had a filled dish before, and then an inset moulding line
+    // under the far edges; stacked inside the keyline those read as pleats --
+    // the cap looked like a concertina. One plane break is enough.
     for (int dy = -kCapH; dy <= kCapH; ++dy) {
         const int half = cap_half(dy, kCapW, kCapH);
         if (half > 0) hline(cx - half, top + dy, half * 2 + 1, face);
     }
-    for (int dy = -kCapH + 3; dy <= -1; ++dy) {
-        const int half = cap_half(dy, kCapW - 6, kCapH - 3);
-        if (half <= 0) continue;
-        hline(cx - half, top + dy, 2, rim);
-        hline(cx + half - 1, top + dy, 2, rim);
-    }
-    // Where the top face meets the walls there has to be a line, or the two
-    // planes fuse and the cap reads as a bowl.
     for (int dy = 0; dy <= kCapH; ++dy) {
         const int half = cap_half(dy, kCapW, kCapH);
         if (half <= 0) continue;
@@ -984,12 +964,6 @@ void draw_composer_control_takeover()
     const uint16_t text  = mix(base, kPaper, static_cast<uint8_t>(copy * 255.f));
     const uint16_t faint = mix(base, kPaper, static_cast<uint8_t>(copy * 78.f));
 
-    // The lamp row only exists when the host has actually said something. Before
-    // the first preview frame it was six empty wells -- a strip that showed
-    // nothing and could not be read as anything, so it is not drawn, and the
-    // instrument takes the whole height instead.
-    const int oy = composer_lamp_valid ? 0 : 9;
-
     // The instrument. A detent leans the knob a little in the direction it
     // turned and lights that side's chevron for the length of the detent.
     const float step = motion::clamp01(1.f - composer_control_step_age / 0.34f);
@@ -999,7 +973,7 @@ void draw_composer_control_takeover()
         ? composer_lamp_colour[lit_lamp] : kPaper;
     const float glow_level = (composer_lamp_valid && lit_lamp >= 0)
         ? composer_lamp_level[lit_lamp].x : 0.f;
-    draw_knob(76 + lean, 36 + oy, composer_knob_angle.x, base, glow, glow_level, copy);
+    draw_knob(76 + lean, 44, composer_knob_angle.x, base, glow, glow_level, copy);
 
     for (int side = 0; side < 2; ++side) {
         const int dir = side == 0 ? -1 : 1;
@@ -1010,52 +984,22 @@ void draw_composer_control_takeover()
             : faint;
         const int ax = side == 0 ? 33 : 119;
         for (int k = 0; k < 6; ++k)
-            vline(ax + dir * k, 50 + oy - 5 + k / 2, 11 - k, c);
+            vline(ax + dir * k, 58 - 5 + k / 2, 11 - k, c);
     }
 
-    draw_keycap(186, 52 + oy, composer_key_press.x, base, copy);
+    draw_keycap(186, 47, composer_key_press.x, base, copy);
 
-    draw_tracked_transparent("TURN", 76 - tracked_width("TURN", 2) / 2, 90 + oy, 2, text);
-    draw_tracked_transparent("SELECT", 186 - tracked_width("SELECT", 2) / 2, 90 + oy, 2, text);
+    draw_tracked_transparent("TURN", 76 - tracked_width("TURN", 2) / 2, 96, 2, text);
+    draw_tracked_transparent("SELECT", 186 - tracked_width("SELECT", 2) / 2, 96, 2, text);
     // Esc is the way out of every other surface on the device, so it has to be
     // the way out of this one too, and has to say so.
     draw_tracked_right("ESC", kScreenW - 10, 8, 1, faint, base);
 
-    // The six agent lamps, mirrored from the host onto the exact columns the
-    // six task cells occupy. Until a preview frame arrives they are empty
-    // wells: the device says it does not know the scale rather than inventing
-    // one.
-    if (!composer_lamp_valid) return;
-    const int lamp_y = 108;
-    for (int i = 0; i < kLampCount; ++i) {
-        const int lx = cell_x(i);
-        const int lw = cell_w(i);
-        // A recessed well behind every lamp, drawn whether or not a frame has
-        // arrived, so the row always reads as six lamps. Without the well a
-        // host lamp that happens to be this surface's blue simply vanishes.
-        fill_rect(lx, lamp_y + 1, lw, 12, mix(base, kInk,
-                  static_cast<uint8_t>(copy * 74.f)));
-        fill_rect(lx, lamp_y, lw, 1, faint);
-        fill_rect(lx, lamp_y + 13, lw, 1, faint);
-        vline(lx, lamp_y, 14, faint);
-        vline(lx + lw - 1, lamp_y, 14, faint);
-        const float level = motion::clamp01(composer_lamp_level[i].x);
-        const uint16_t colour = mix(base, composer_lamp_colour[i],
-                                    static_cast<uint8_t>(copy * 255.f));
-        const int h = 2 + static_cast<int>(level * 10.f);
-        fill_rect(lx + 1, lamp_y + 13 - h, lw - 2, h,
-                  mix(mix(base, colour, 90), colour,
-                      static_cast<uint8_t>(level * 255.f)));
-    }
-    if (lit_lamp >= 0) {
-        const float m = composer_lamp_marker.x;
-        const int idx = std::clamp(static_cast<int>(m), 0, kLampCount - 1);
-        const int nxt = std::clamp(idx + 1, 0, kLampCount - 1);
-        const float f = m - static_cast<float>(idx);
-        const int mx = static_cast<int>(motion::lerp(
-            static_cast<float>(cell_x(idx)), static_cast<float>(cell_x(nxt)), f));
-        fill_rect(mx + cell_w(idx) / 2 - 3, lamp_y + 16, 7, 2, text);
-    }
+    // The host's lamps are not drawn. In this mode their pattern is the host's
+    // own UI state, not six agent statuses, so a row of them under the
+    // instrument said nothing a reader could use. What the frame is good for is
+    // the colour, and that is where it goes: into the knob's base ring, which
+    // is the object being turned.
 }
 
 // ---------------------------------------------------------------- announcement
