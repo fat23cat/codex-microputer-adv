@@ -86,9 +86,9 @@ require("main/main.cpp",
         r"[\s\S]{0,220}ui::notify_composer_control_step\(right \? 1 : -1\);",
         "a successful detent must always reach the control surface")
 require("main/main.cpp",
-        r"case Key::Back:[\s\S]{0,420}if \(ui::composer_control_active\(\)\) \{"
-        r"[\s\S]{0,120}dismiss_composer_control_preview",
-        "escape must leave the host control page like every other surface")
+        r"case Key::Back:[\s\S]{0,700}if \(ui::composer_control_active\(\)\) \{"
+        r"[\s\S]{0,800}send_agent_key_to\(target, s\.selected, true\)",
+        "escape must ask the host to drop its surface, not just hide the page")
 require("main/ui.cpp",
         r"int cap_half\(int dy, int half_w, int half_h\)",
         "the keycap outline must be a rounded rhombus, not a spiked one")

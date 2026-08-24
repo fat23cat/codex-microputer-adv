@@ -725,7 +725,19 @@ void handle_press(const Press& press)
         // so this is deliberately local: the page leaves and quarantines itself
         // against an immediate reopen, and nothing is claimed to the host.
         if (ui::composer_control_active()) {
-            ui::dismiss_composer_control_preview();
+            // Micro has no escape key, so the way out of a control surface is
+            // the one a hand would use on the hardware: press the agent key
+            // that is lit. It returns focus to that chat, which is what makes
+            // Codex drop the picker -- and the host's own close frame then
+            // takes this page down, the same as if the surface had been
+            // dismissed on the desktop. The local close is only the fallback
+            // for when there is no host to answer.
+            const auto target = codex_micro::active_transport();
+            const bool sent = send_agent_key_to(target, s.selected, true)
+                           && send_agent_key_to(target, s.selected, false);
+            std::printf("CCP_UI|composer|escape|agent=%d|sent=%d\n",
+                        s.selected, sent ? 1 : 0);
+            if (!sent) ui::dismiss_composer_control_preview();
             audio::play(audio::Cue::Select);
             break;
         }

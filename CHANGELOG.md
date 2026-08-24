@@ -2,6 +2,13 @@
 
 ## 0.9.0 — 2026-08-22
 
+- Escape now asks the host to drop its surface instead of only hiding the page.
+  Micro has no escape key, so it does what a hand would do on the hardware:
+  presses the agent key that is lit. That returns focus to the chat, Codex
+  drops the picker, and the host's own close frame takes the page down -- the
+  same path as dismissing the surface on the desktop. Hiding it locally is
+  kept only as the fallback for when there is no host to answer.
+
 - Weighted the keycap against the knob: a thicker wall and a lower seat, so the
   two objects sit as a pair rather than a tall one beside a flat one.
 
