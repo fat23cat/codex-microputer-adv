@@ -851,6 +851,11 @@ void handle_press(const Press& press)
                 ui::notify_stick_step(press.key == Key::Right ? 0
                                     : press.key == Key::Down  ? 1
                                     : press.key == Key::Left  ? 2 : 3);
+                // Right and up rise, left and down fall. The dial's detents
+                // already speak that way, and an instrument page with no
+                // sound at all reads as one that did not register the press.
+                const bool rising = press.key == Key::Right || press.key == Key::Up;
+                audio::play(rising ? audio::Cue::StepRight : audio::Cue::StepLeft);
             }
         }
         if (press.key == Key::Digit) {

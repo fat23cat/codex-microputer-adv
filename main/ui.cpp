@@ -105,6 +105,8 @@ float stick_step_age = 99.f;
 int   stick_step_dir = -1;          // 0 right, 1 down, 2 left, 3 up
 motion::Spring stick_lean_x;
 motion::Spring stick_lean_y;
+float stick_throw_hold = -1.f;   // >=0 while the cap is still on its way out
+bool  stick_open_sound_pending = false;
 constexpr float kStickIdleClose = 3.f;
 
 float marquee_hold = 0.f;
@@ -853,8 +855,8 @@ void draw_stick(int cx, int cy, float lx, float ly, uint16_t base, float copy)
     // the ellipse, so the motion stays in the plane of the plate.
     // Its base rides on the plate, so the cap stands proud of the recess
     // rather than down inside it -- a rubber nub you can get a thumb on.
-    const int px = cx + static_cast<int>(lx * 16.f);
-    const int py = cy + 1 - kCapWall + static_cast<int>(ly * 8.f);
+    const int px = cx + static_cast<int>(std::lround(lx * 16.f));
+    const int py = cy + 1 - kCapWall + static_cast<int>(std::lround(ly * 8.f));
 
     for (int t = kCapWall; t >= 0; --t)
         fill_ellipse(px, py + t, kCapRx + kOutline, kCapRy + kOutline, line);
@@ -2147,6 +2149,7 @@ void notify_stick_step(int direction)
         stick_control_amount.to(1.f);
         stick_lean_x.snap(0.f);
         stick_lean_y.snap(0.f);
+        stick_open_sound_pending = true;
         wake();
     }
     stick_step_dir = direction;
@@ -2158,10 +2161,13 @@ void notify_stick_step(int direction)
     // Screen y runs the same way the direction table does: down is +1 in
     // both. Negating it here sent every vertical throw the wrong way, so the
     // cap answered a Down key by hopping away from the chevron that lit.
-    stick_lean_x.snap(dirs[direction][0] * 1.15f);
-    stick_lean_y.snap(dirs[direction][1] * 1.15f);
-    stick_lean_x.to(0.f);
-    stick_lean_y.to(0.f);
+    //
+    // The cap springs out and then springs back; it is not teleported to full
+    // deflection and released. Snapping it there was a jump on every press,
+    // and on a held arrow the repeats made the whole thing stutter.
+    stick_lean_x.to(dirs[direction][0] * 1.f);
+    stick_lean_y.to(dirs[direction][1] * 1.f);
+    stick_throw_hold = 0.f;
     invalidate();
 }
 
@@ -2173,6 +2179,9 @@ void dismiss_stick_control()
     stick_control_target = false;
     stick_control_amount.to(0.f);
     stick_step_dir = -1;
+    stick_throw_hold = -1.f;
+    stick_lean_x.to(0.f);
+    stick_lean_y.to(0.f);
     stick_control_idle = 99.f;
     invalidate();
 }
@@ -2322,6 +2331,10 @@ void service()
         composer_control_open_sound_pending = false;
         audio::play(audio::Cue::MenuOpen);
     }
+    if (stick_open_sound_pending) {
+        stick_open_sound_pending = false;
+        audio::play(audio::Cue::MenuOpen);
+    }
     if (!status_animation_active) clock_phase += dt;
     if (since_select < 9.f) since_select += dt;
     if (since_status < 9.f) since_status += dt;
@@ -2381,10 +2394,18 @@ void service()
         stick_control_idle += dt;
         stick_step_age += dt;
         animating = true;
-        // Loose and slow to come back: the throw has to be legible at a
-        // glance, and a stiff spring made it a twitch nobody could see.
-        if (!stick_lean_x.settled()) stick_lean_x.step(dt, 15.f, 0.45f);
-        if (!stick_lean_y.settled()) stick_lean_y.step(dt, 15.f, 0.45f);
+        // Out fast, back loose: the throw has to be legible at a glance, and
+        // a stiff spring in both directions made it a twitch nobody could see.
+        if (stick_throw_hold >= 0.f) {
+            stick_throw_hold += dt;
+            if (stick_throw_hold >= 0.10f) {
+                stick_lean_x.to(0.f);
+                stick_lean_y.to(0.f);
+                stick_throw_hold = -1.f;
+            }
+        }
+        if (!stick_lean_x.settled()) stick_lean_x.step(dt, 30.f, 0.62f);
+        if (!stick_lean_y.settled()) stick_lean_y.step(dt, 30.f, 0.62f);
         // Always. An arrow is an impulse: the host consumes it and reports
         // nothing back, so there is no state here for the page to wait on and
         // no reason for it to outlive the gesture.

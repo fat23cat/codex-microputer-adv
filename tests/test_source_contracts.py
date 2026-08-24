@@ -181,6 +181,13 @@ require("main/ui.cpp",
 require("main/main.cpp",
         r"if \(!ui::composer_control_active\(\)\) \{\s*ui::notify_stick_step",
         "an arrow must not throw the dial page off the screen mid-selection")
+require("main/main.cpp",
+        r"const bool rising = press\.key == Key::Right \|\| press\.key == Key::Up;"
+        r"\s*audio::play\(rising \? audio::Cue::StepRight : audio::Cue::StepLeft\);",
+        "the stick must be as audible as the dial, and in the same direction")
+require("main/ui.cpp",
+        r"stick_lean_x\.to\(dirs\[direction\]\[0\] \* 1\.f\);[\s\S]{0,140}stick_throw_hold = 0\.f;",
+        "the cap must spring out to its throw, not be teleported to it")
 require("main/ui.cpp",
         r"void draw_stick\(int cx, int cy, float lx, float ly",
         "the stick must be drawn as the object it is, in the dial's family")

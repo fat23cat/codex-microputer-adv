@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.3 — 2026-08-24
+
+- The stick page has sound: right and up rise, left and down fall, on the same
+  cues the dial's detents use, and the page opens on the same chime the dial's
+  does. Silence on an instrument page reads as a press that did not register.
+- The cap springs out to its throw and springs back instead of being teleported
+  to full deflection and released. The jump was visible on every press, and on
+  a held arrow the repeats stacked into a stutter.
+- Rounded the cap's position instead of truncating it, so the last pixel of the
+  return does not stick.
+
 ## 0.10.2 — 2026-08-24
 
 - Fixed the stick's vertical throw, which ran backwards: screen y and the
