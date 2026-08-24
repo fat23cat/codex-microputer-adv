@@ -56,6 +56,14 @@ require("main/ui.cpp",
         r"if \(!composer_control_target\) \{[\s\S]{0,220}set_composer_control_active\(true\)",
         "turning the dial must open the control surface, not only pressing it")
 require("main/ui.cpp",
+        r"void notify_composer_control_step\(int direction\)[\s\S]{0,700}"
+        r"composer_confirm_age = -1\.f;",
+        "a detent must call off any pending exit; a selection in progress wins")
+require("main/ui.cpp",
+        r"const int travel = static_cast<int>\(down \* 5\.f\);[\s\S]{0,120}"
+        r"const int top  = cy \+ travel;",
+        "the keycap must travel down into a plate that stays put")
+require("main/ui.cpp",
         r"composer_knob_angle\.to\(composer_knob_angle\.target\s*\+ composer_control_step_dir \* kDetentRadians\)",
         "each detent must advance the knob by exactly one flute")
 require("main/ui.cpp",

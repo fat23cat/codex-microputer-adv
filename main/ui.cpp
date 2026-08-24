@@ -865,8 +865,13 @@ int cap_body(int dy, int wall)
 void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
 {
     const float down = motion::clamp01(press);
-    const int wall = kCapWall - static_cast<int>(down * 5.f);
-    const int top  = cy - static_cast<int>(down * 2.f);
+    // The plate does not move: the cap travels down into it. So the top face
+    // goes down by the travel and the wall loses exactly that much, which keeps
+    // the base where it was. Moving the top up instead -- which is what this
+    // did -- made the cap flinch upwards and tuck itself in.
+    const int travel = static_cast<int>(down * 5.f);
+    const int wall = kCapWall - travel;
+    const int top  = cy + travel;
 
     const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
     const uint16_t shade = mix(base, kInk,  static_cast<uint8_t>(copy * 70.f));
@@ -880,7 +885,7 @@ void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
 
     // Contact shadow, tightening as the cap goes down. Most of what sells the
     // travel is the shadow, not the two pixels the cap actually moves.
-    fill_ellipse(cx, top + kCapH + wall + 2 - static_cast<int>(down * 2.f),
+    fill_ellipse(cx, top + kCapH + wall + 2,
                  kCapW - 4 + static_cast<int>(down * 3.f), 3, shade);
 
     const int first = -kCapH - kOutline;
@@ -2079,6 +2084,10 @@ void notify_composer_control_step(int direction)
         set_composer_control_active(true);
         composer_control_open_sound_pending = true;
     }
+    // A detent means the user is still choosing, whatever the last click may
+    // have looked like. It calls off any pending exit outright -- the page must
+    // never close out from under a selection in progress.
+    composer_confirm_age = -1.f;
     composer_control_step_dir = direction < 0 ? -1 : 1;
     composer_control_step_age = 0.f;
     composer_control_idle = 0.f;

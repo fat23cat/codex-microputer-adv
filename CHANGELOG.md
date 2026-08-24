@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.8 — 2026-08-22
+
+- The keycap travels the right way. It was moving its top face up while the
+  wall shrank, so the cap flinched upwards and tucked itself in. The plate does
+  not move: the top now goes down by the travel and the wall loses exactly that
+  much, which leaves the base and its shadow where they were.
+- A detent calls off any pending exit outright. After a click the page was
+  counting down while the user carried on turning, so it closed out from under
+  a selection in progress. Whatever the last click meant, a detent means the
+  user is still choosing, and that wins.
+
 ## 0.8.7 — 2026-08-22
 
 - The wait after a click is now a test of silence, not a stopwatch. The fixed
