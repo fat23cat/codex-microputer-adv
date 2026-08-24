@@ -65,21 +65,11 @@ require("main/ui.cpp",
         r"if \(!composer_control_target\) \{[\s\S]{0,220}set_composer_control_active\(true\)",
         "turning the dial must open the control surface, not only pressing it")
 require("main/ui.cpp",
-        r"const int travel = static_cast<int>\(down \* \(spec\.wall / 3\)\);[\s\S]{0,140}"
-        r"const int top  = cy \+ travel;",
-        "the keycap must travel down into a plate that stays put")
-require("main/ui.cpp",
         r"composer_knob_angle\.to\(composer_knob_angle\.target\s*\+ composer_control_step_dir \* kDetentRadians\)",
         "each detent must advance the knob by exactly one flute")
 require("main/ui.cpp",
         r"void draw_knob\(int cx, int cy, float angle",
         "the dial must be drawn as the cylinder it physically is")
-require("main/ui.cpp",
-        r"void draw_keycap\(int cx, int cy, const CapSpec& spec, CapGlyph glyph,",
-        "the select key must be drawn as an isometric keycap")
-require("main/ui.cpp",
-        r"draw_keycap\(186, 54, kCapSelect, CapGlyph::Enter,",
-        "the confirm cap must carry the return arrow, not the encoder's own punctuation")
 require("main/ui.cpp",
         r"if \(!composer_control_engaged && composer_control_idle >= 3\.f\) \{"
         r"[\s\S]{0,160}dismiss_composer_control_preview\(\);",
@@ -92,9 +82,6 @@ require("main/main.cpp",
         r"if \(press\.key == Key::Enter && ui::composer_control_active\(\)\) \{"
         r"[\s\S]{0,600}send_encoder_press_to\(target\)",
         "Enter must confirm the host's control surface instead of submitting the composer")
-require("main/ui.cpp",
-        r"const int dw = spec\.w - spec\.w / 3;[\s\S]{0,420}hline\(cx - half, top \+ dy - 1, half \* 2 \+ 1, dish\);",
-        "the cap must carry a dish as a filled tone, not another parallel edge")
 forbid("main/ui.cpp",
        r"fill_rect\(cx \+ static_cast<int>\(kKnobRx \* 0\.60f",
        "the dial must not claim to know its absolute position")
@@ -110,9 +97,14 @@ require("main/main.cpp",
         r"case Key::Back:[\s\S]{0,700}if \(ui::composer_control_active\(\)\) \{"
         r"[\s\S]{0,800}send_agent_key_to\(target, s\.selected, true\)",
         "escape must ask the host to drop its surface, not just hide the page")
+forbid("main/ui.cpp", r"draw_keycap",
+       "the control page carries one object, the dial; the confirm is a hint")
 require("main/ui.cpp",
-        r"int cap_half\(int dy, int half_w, int half_h\)",
-        "the keycap outline must be a rounded rhombus, not a spiked one")
+        r"draw_knob\(kScreenW / 2 \+ lean,",
+        "the dial must sit on the centre line with its chevrons")
+require("main/ui.cpp",
+        r'draw_tracked_right\("ENTER", kScreenW - 10, 8, 1, faint, base\);',
+        "the confirm key must be named in the same hint style as Esc")
 require("main/ui.cpp",
         r"constexpr int kOutline  = 2;",
         "the instrument must carry a keyline heavy enough to survive the grid")
@@ -120,7 +112,7 @@ require("main/main.cpp",
         r"Cue::StepRight\s*:\s*audio::Cue::StepLeft",
         "encoder detents must have directional audio")
 require("main/main.cpp",
-        r"if \(had_preview\)[\s\S]{0,120}Cue::MenuApply",
+        r"confirm_via_enter[\s\S]{0,200}Cue::MenuApply",
         "host-previewed composer selection must have a distinct apply cue")
 require("main/audio.cpp",
         r"apply: C5 -> E5 -> G5",
@@ -147,7 +139,7 @@ require("main/main.cpp",
         r"if \(!press\.down\)[\s\S]{0,400}send_agent_key_to\([\s\S]{0,160}false[\s\S]{0,20000}send_agent_key_to\([\s\S]{0,160}true",
         "agent keys must preserve down and up for native double tap")
 require("main/main.cpp",
-        r"Key::EncoderPress[\s\S]{0,320}send_key_to\([\s\S]{0,140}\"ENC\",\s*0[\s\S]{0,7000}send_encoder_press_to\(",
+        r"Key::Enter\)[\s\S]{0,320}send_key_to\([\s\S]{0,140}\"ENC\",\s*0[\s\S]{0,30000}send_encoder_press_to\(",
         "encoder release must remain physical so Codex can detect long press")
 require("main/ble_transport.cpp", r"target == codex_micro::Transport::Usb[\s\S]{0,140}companion_usb_send_rpc", "native responses must remain bound to USB requester")
 require("main/ble_transport.cpp", r"kNativeAddresses\[3\]\[6\]",
@@ -449,12 +441,8 @@ require("main/theme.h",
 require("main/ui.cpp",
         r"Status::Done\)\s+return t\.unseen_done \? kInk : kIdleDigit[\s\S]{0,300}Status::Done && !t\.unseen_done",
         "viewed completed tasks must use the inactive grey digit scale")
-require("main/main.cpp",
-        r"had_preview[\s\S]{0,300}notify_composer_control_select[\s\S]{0,160}else \{\s*ui::allow_composer_control_preview",
-        "encoder press must explicitly toggle the composer control overlay")
-require("main/ui.cpp",
-        r"composer_key_hold \+= dt;[\s\S]{0,160}composer_key_press\.to\(0\.f\)",
-        "the keycap must stay down long enough for the press to be seen")
+forbid("main/key_layout.h", r"Key::EncoderPress",
+       "backslash must not duplicate Enter as a second confirm key")
 require("main/ui.cpp",
         r"for \(int k = 0; k < 24; \+\+k\)[\s\S]{0,500}vline\(x, y, kKnobWall",
         "the knob must be knurled around its wall, like the Work Louder encoder")

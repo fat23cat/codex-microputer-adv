@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.6 — 2026-08-24
+
+- Took the keycap off the control page. Its whole subject is the dial, and a
+  second drawn object competed with it for the eye.
+- Unbound row-1 backslash. It was the encoder click and Enter is the click now;
+  two keys for one confirm is one too many. The release stays physical -- it
+  moved onto Enter -- so Codex can still time a long press on it.
+- Centred the dial and its chevrons on the screen, with TURN under them.
+- Named ENTER above ESC in the top-right corner, in the same hint style.
+
+Clicking the encoder without turning it first is no longer possible from the
+Cardputer: rotation is what opens the surface, and Enter confirms once it is
+open. Enter still submits the composer everywhere else.
+
 ## 0.9.5 — 2026-08-24
 
 - The control page closes itself three seconds after the last detent, but only

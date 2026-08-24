@@ -57,7 +57,6 @@ void set_voice_active(bool active, int slot);
 void set_composer_control_active(bool active);
 void set_pairing_pin(bool active, uint32_t passkey);
 bool composer_control_active();
-void allow_composer_control_preview();
 void dismiss_composer_control_preview();
 void notify_composer_control_step(int direction);
 void notify_composer_control_select();

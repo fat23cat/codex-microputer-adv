@@ -5,8 +5,10 @@
 namespace keys {
 
 // Pure physical-layout mapping shared by both keyboard backends and host tests.
-// Keep punctuation explicit: row-1 backslash is the encoder click, while the
+// Keep punctuation explicit: row-1 brackets are the encoder detents, while the
 // row-3 slash carries the printed right-arrow and remains the analog stick.
+// Row-1 backslash is unbound. It was the encoder click, but Enter is the click
+// now -- one confirm key, not two -- and the control page says so.
 inline Press map_layout(int row, int col)
 {
     switch (row) {
@@ -22,7 +24,6 @@ inline Press map_layout(int row, int col)
             if (col >= 5 && col <= 10) return {Key::NativeAction, col + 1};
             if (col == 11) return {Key::EncoderLeft, 0};
             if (col == 12) return {Key::EncoderRight, 0};
-            if (col == 13) return {Key::EncoderPress, 0};
             break;
         case 2:   // fn shift a s d f g h j k l ; ' enter
             if (col == 2)  return {Key::NativeAction, 1011};
@@ -42,8 +43,10 @@ inline Press map_layout(int row, int col)
 
 inline bool needs_release(Key key)
 {
+    // Enter carries the encoder click, and that release has to stay physical
+    // so Codex can still time a long press on it.
     return key == Key::Digit || key == Key::NativeAction
-        || key == Key::EncoderPress;
+        || key == Key::Enter;
 }
 
 }  // namespace keys

@@ -5,12 +5,13 @@
 
 int main()
 {
-    // [ and ] are context-free encoder detents; backslash is its click. Codex,
-    // not the device, decides whether that means navigation or reasoning.
+    // [ and ] are context-free encoder detents; the click is on Enter, and
+    // backslash is unbound. Codex, not the device, decides whether a detent
+    // means navigation or reasoning.
     assert(keys::map_layout(1, 11).key == keys::Key::EncoderLeft);
     assert(keys::map_layout(1, 12).key == keys::Key::EncoderRight);
-    assert(keys::map_layout(1, 13).key == keys::Key::EncoderPress);
-    assert(keys::needs_release(keys::Key::EncoderPress));
+    assert(keys::map_layout(1, 13).key == keys::Key::Other);
+    assert(keys::needs_release(keys::Key::Enter));
     assert(keys::map_layout(3, 12).key == keys::Key::Right);
 
     // Preserve the remaining navigation controls around the punctuation row.

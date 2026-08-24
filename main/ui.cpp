@@ -92,8 +92,6 @@ float composer_lamp_age = 99.f;
 // so a fast series of clicks is one continuous rotation rather than a queue of
 // jumps -- the same reason every marker on the device is a spring.
 motion::Spring composer_knob_angle;
-motion::Spring composer_key_press;
-float composer_key_hold = -1.f;   // the cap stays down long enough to be seen
 constexpr float kDetentRadians = 0.5236f;   // 30 degrees: twelve flutes, one per detent
 float marquee_hold = 0.f;
 int   marquee_dir  = 1;
@@ -806,159 +804,6 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
     (void)mark;
 }
 
-// Half-width of the keycap outline at row `dy`. The edges of a cap in this
-// projection have to stay dead straight, or the object stops sitting on the
-// ground plane -- a superellipse turns it into a coin. So the rhombus is exact
-// and only the four tips are cut, which is what rounding means at this size.
-// The cut is a fixed chamfer rather than a curve, because a curve fitted to
-// four pixels lands differently on each tip and the silhouette goes lumpy.
-int cap_half(int dy, int half_w, int half_h)
-{
-    const int a = std::abs(dy);
-    if (a > half_h - 1) return 0;                       // top and bottom tips
-    const int d = half_w - (half_w * a) / std::max(1, half_h);
-    return std::min(d, half_w - 1);                     // left and right tips
-}
-
-// A cap is described by the half-extents of its top face, the height of its
-// wall and how much wider it gets on the way down to the plate.
-struct CapSpec {
-    int w, h, wall, flare;
-};
-constexpr CapSpec kCapSelect{24, 12, 15, 4};   // a keycap is wider at the plate
-                                               // than at the top, and that taper
-                                               // is most of what tells the eye it
-                                               // is a key and not a box
-
-enum class CapGlyph : uint8_t { Enter };
-
-// Silhouette of the whole tapered cap at row `dy`, measured from the centre of
-// the top face: the union of the top outline swept down and outwards to the
-// plate. Used to lay the keyline as one dilated shape, because outlining the
-// top and the walls separately leaves tabs sticking out at the four tips.
-int cap_body(int dy, const CapSpec& spec, int wall)
-{
-    // Only below the top face does the flare count. Unioning it over the whole
-    // silhouette let the base's far corners peek out past the top and gave the
-    // cap a hexagonal brim; on a real key the top overhangs and hides them.
-    if (dy <= 0) return cap_half(dy, spec.w, spec.h);
-    int best = 0;
-    const int span = std::max(1, wall);
-    for (int s = 0; s <= wall; ++s) {
-        const int half = cap_half(dy - s, spec.w + spec.flare * s / span,
-                                  spec.h + (spec.flare / 2) * s / span);
-        if (half > best) best = half;
-    }
-    return best;
-}
-
-void draw_keycap(int cx, int cy, const CapSpec& spec, CapGlyph glyph,
-                 float press, uint16_t base, float copy)
-{
-    const float down = motion::clamp01(press);
-    // The plate does not move: the cap travels down into it. So the top face
-    // goes down by the travel and the wall loses exactly that much, which keeps
-    // the base where it was. Moving the top up instead -- which is what this
-    // did -- made the cap flinch upwards and tuck itself in.
-    const int travel = static_cast<int>(down * (spec.wall / 3));
-    const int wall = spec.wall - travel;
-    const int top  = cy + travel;
-
-    const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
-    const uint16_t shade = mix(base, kInk,  static_cast<uint8_t>(copy * 70.f));
-    const uint16_t left  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.14f));
-    const uint16_t right = mix(base, kPaper, static_cast<uint8_t>(ink * 0.38f));
-    const uint16_t face  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.66f));
-    const uint16_t dish  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.56f));
-    const uint16_t lip   = mix(base, kPaper, static_cast<uint8_t>(ink * 0.82f));
-    const uint16_t brk   = mix(base, kPaper, static_cast<uint8_t>(ink * 0.48f));
-    const uint16_t key   = mix(base, kPaper, ink);
-    const uint16_t mark  = mix(face, kInk,  static_cast<uint8_t>(copy * 190.f));
-    const uint16_t cut   = mix(face, kPaper, static_cast<uint8_t>(copy * 120.f));
-
-    // Contact shadow, tightening as the cap goes down. Most of what sells the
-    // travel is the shadow, not the two pixels the cap actually moves.
-    fill_ellipse(cx, top + spec.h + wall + 3,
-                 spec.w + spec.flare - 3 + static_cast<int>(down * 3.f), 3, shade);
-
-    const int first = -spec.h - kOutline;
-    const int last  = spec.h + spec.flare + wall + kOutline;
-
-    // Keyline: the silhouette, dilated, with the faces sunk into it.
-    for (int dy = first; dy <= last; ++dy) {
-        int half = 0;
-        for (int d = -kOutline; d <= kOutline; ++d) {
-            const int body = cap_body(dy + d, spec, wall);
-            if (body > 0) half = std::max(half, body + kOutline - std::abs(d));
-        }
-        if (half > 0) hline(cx - half, top + dy, half * 2 + 1, key);
-    }
-    // Walls, sloping outwards as they go down.
-    for (int dy = first; dy <= last; ++dy) {
-        const int half = cap_body(dy, spec, wall);
-        if (half <= 0) continue;
-        hline(cx - half, top + dy, half, left);
-        hline(cx, top + dy, half + 1, right);
-    }
-    // Top face, then the plane break where it meets the walls. Only one line
-    // sits inside the keyline: an inset moulding line under it as well read as
-    // pleats and the cap looked like a concertina.
-    for (int dy = -spec.h; dy <= spec.h; ++dy) {
-        const int half = cap_half(dy, spec.w, spec.h);
-        if (half > 0) hline(cx - half, top + dy, half * 2 + 1, face);
-    }
-    for (int dy = 0; dy <= spec.h; ++dy) {
-        const int half = cap_half(dy, spec.w, spec.h);
-        if (half <= 0) continue;
-        hline(cx - half, top + dy, 2, brk);
-        hline(cx + half - 1, top + dy, 2, brk);
-    }
-    // The dish. Not a line -- a filled area a shade darker than the face with a
-    // lit rim along its far edges, which is how a shallow scoop reads: the far
-    // wall catches the light and the floor loses it. As an outline it was just
-    // another edge parallel to the keyline, and as a large area it turned the
-    // cap into a tray, so it is small and it is a tone, not a stroke.
-    const int dw = spec.w - spec.w / 3;
-    const int dh = spec.h - spec.h / 3;
-    for (int dy = -dh; spec.w >= 20 && dy <= dh; ++dy) {
-        const int half = cap_half(dy, dw, dh);
-        if (half <= 0) continue;
-        hline(cx - half, top + dy - 1, half * 2 + 1, dish);
-        if (dy <= 0) {
-            hline(cx - half, top + dy - 2, 2, lip);
-            hline(cx + half - 1, top + dy - 2, 2, lip);
-        }
-    }
-
-    // The legend, incised: the stroke in dark ink with a light pixel following
-    // it down and to the right, so it reads as cut into the plastic rather than
-    // printed on it -- and so its direction is unambiguous, which matters most
-    // for the backslash, whose fall is otherwise easy to confuse with the
-    // cap's own left edge running the other way.
-    switch (glyph) {
-    case CapGlyph::Enter:
-        // The return arrow is set upright rather than sheared into the plane
-        // of the cap. A diagonal survives that projection -- which is why a
-        // backslash read correctly -- but this glyph is verticals and
-        // horizontals, and the shear lays the bar almost flat while standing
-        // the stem up. A printed legend faces the reader on real caps anyway.
-        {
-            const int gx = cx - 1, gy = top - 1;
-            hline(gx, gy + 5, 7, cut);         // the incision's lit lower wall,
-                                               // kept clear of the head
-            vline(gx + 5, gy - 4, 9, mark);
-            hline(gx - 4, gy + 4, 10, mark);
-            // A solid head. One pixel per row was a hairline chevron that lost
-            // its direction against the bar it hangs off.
-            fill_rect(gx - 3, gy + 3, 2, 1, mark);
-            fill_rect(gx - 3, gy + 5, 2, 1, mark);
-            fill_rect(gx - 2, gy + 2, 1, 1, mark);
-            fill_rect(gx - 2, gy + 6, 1, 1, mark);
-        }
-        break;
-    }
-}
-
 // ---------------------------------------------------- composer control preview
 // Codex Micro expresses composer controls through temporary light previews. The
 // page is the instrument, not a label for it: the dial and the key are drawn as
@@ -1012,7 +857,7 @@ void draw_composer_control_takeover()
         ? composer_lamp_colour[lit_lamp] : kPaper;
     const float glow_level = (composer_lamp_valid && lit_lamp >= 0)
         ? composer_lamp_level[lit_lamp].x : 0.f;
-    draw_knob(76 + lean, 44, composer_knob_angle.x, base, glow, glow_level, copy);
+    draw_knob(kScreenW / 2 + lean, 48, composer_knob_angle.x, base, glow, glow_level, copy);
 
     // The two detent directions stay chevrons. Drawn as keycaps they turned a
     // page with one control on it into a page with three, and the dial stopped
@@ -1024,21 +869,19 @@ void draw_composer_control_takeover()
             ? mix(base, kPaper, static_cast<uint8_t>(
                   copy * std::min(255.f, 70.f + step * 185.f)))
             : faint;
-        const int ax = side == 0 ? 33 : 119;
+        const int ax = kScreenW / 2 + dir * 44;
         for (int k = 0; k < 6; ++k)
             vline(ax + dir * k, 58 - 5 + k / 2, 11 - k, c);
     }
 
-    // Seated lower than the knob on purpose. The cap is the wider, heavier
-    // shape of the two; set on the same line it reads as riding high.
-    draw_keycap(186, 54, kCapSelect, CapGlyph::Enter,
-                composer_key_press.x, base, copy);
-
-    draw_tracked_transparent("TURN", 76 - tracked_width("TURN", 2) / 2, 96, 2, text);
-    draw_tracked_transparent("SELECT", 186 - tracked_width("SELECT", 2) / 2, 96, 2, text);
-    // Esc is the way out of every other surface on the device, so it has to be
-    // the way out of this one too, and has to say so.
-    draw_tracked_right("ESC", kScreenW - 10, 8, 1, faint, base);
+    draw_tracked_transparent("TURN", (kScreenW - tracked_width("TURN", 2)) / 2, 100, 2, text);
+    // The two keys that act on the dial, set as hints rather than as objects.
+    // Drawing the confirm as a keycap made a second thing to look at on a page
+    // whose whole subject is the dial. Esc is the way out of every other
+    // surface on the device, so it has to be the way out of this one too, and
+    // has to say so.
+    draw_tracked_right("ENTER", kScreenW - 10, 8, 1, faint, base);
+    draw_tracked_right("ESC", kScreenW - 10, 18, 1, faint, base);
 
     // The host's lamps are not drawn. In this mode their pattern is the host's
     // own UI state, not six agent statuses, so a row of them under the
@@ -2023,10 +1866,8 @@ void set_composer_control_active(bool active)
     composer_control_engaged = false;
     composer_control_step_age = 99.f;
     composer_control_step_dir = 0;
-    composer_key_hold = -1.f;
     if (active) {
         composer_knob_angle.snap(0.f);
-        composer_key_press.snap(0.f);
     } else {
         composer_control_closed_at_ms = lgfx::millis();
         composer_lamp_valid = false;
@@ -2046,12 +1887,6 @@ void set_pairing_pin(bool active, uint32_t passkey)
 }
 
 bool composer_control_active() { return composer_control_target; }
-
-void allow_composer_control_preview()
-{
-    composer_control_suppressed_until_ms = 0;
-    composer_control_closed_at_ms = 0;
-}
 
 void dismiss_composer_control_preview()
 {
@@ -2080,10 +1915,6 @@ void notify_composer_control_step(int direction)
 void notify_composer_control_select()
 {
     if (!composer_control_target) return;
-    // Down on the press, held for a moment, then sprung back. Springing back
-    // from the same frame it went down in is a flinch, not a keystroke.
-    composer_key_press.snap(1.f);
-    composer_key_hold = 0.f;
     composer_control_idle = 0.f;
     // A click may have stepped into a submenu, and from the click alone the
     // device cannot tell. So it stops timing: from here the page waits for the
@@ -2318,10 +2149,6 @@ void service()
             composer_knob_angle.step(dt, 26.f, 0.62f);
             animating = true;
         }
-        if (!composer_key_press.settled()) {
-            composer_key_press.step(dt, 30.f, 0.7f);
-            animating = true;
-        }
         if (!composer_lamp_marker.settled()) {
             composer_lamp_marker.step(dt, 24.f, 0.8f);
             animating = true;
@@ -2329,17 +2156,7 @@ void service()
         for (auto& level : composer_lamp_level) {
             if (!level.settled()) { level.step(dt, 18.f, 0.9f); animating = true; }
         }
-        // Mouse/keyboard confirmation on the Mac does not send an encoder
-        // release back to the device. Never leave the overlay stuck forever.
-        if (composer_key_hold >= 0.f) {
-            composer_key_hold += dt;
-            animating = true;
-            if (composer_key_hold >= 0.09f) {
-                composer_key_press.to(0.f);
-                composer_key_hold = -1.f;
-            }
-        }
-        else animating = true;
+        animating = true;
         // Once the session is engaged, nothing here closes the page. Every
         // timer tried for that -- a fixed wait after the click, then a test of
         // the host's silence -- was the device guessing at a state only Codex

@@ -263,8 +263,6 @@ const char* name(Key key)
         return "ENCODER_LEFT";
     case Key::EncoderRight:
         return "ENCODER_RIGHT";
-    case Key::EncoderPress:
-        return "ENCODER_PRESS";
     case Key::NativeAction:
         return "NATIVE_ACTION";
     case Key::Help:

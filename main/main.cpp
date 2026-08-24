@@ -558,7 +558,9 @@ void handle_press(const Press& press)
             if (target != codex_micro::Transport::None)
                 send_native_action_to(target, press.digit, false, s.selected);
             native_action_transport[press.digit] = codex_micro::Transport::None;
-        } else if (press.key == Key::EncoderPress) {
+        } else if (press.key == Key::Enter) {
+            // Only the confirm press claims a transport, so an Enter that
+            // submitted the composer releases nothing here.
             if (encoder_press_transport != codex_micro::Transport::None)
                 codex_micro::send_key_to(encoder_press_transport, "ENC", 0);
             encoder_press_transport = codex_micro::Transport::None;
@@ -659,29 +661,6 @@ void handle_press(const Press& press)
         break;
     }
 
-    case Key::EncoderPress: {
-        // A click opens or selects whatever Codex currently focuses. Wait
-        // for a host light preview before presenting a local control UI.
-        const bool had_preview = ui::composer_control_active();
-        if (had_preview) {
-            // Confirming closes the host's picker, so the page leaves too --
-            // but only after the keycap has visibly travelled.
-            ui::notify_composer_control_select();
-        } else {
-            ui::allow_composer_control_preview();
-        }
-        const auto target = codex_micro::active_transport();
-        if (!send_encoder_press_to(target)) {
-            encoder_press_transport = codex_micro::Transport::None;
-            ui::toast("DIAL", "no host", theme::kOrange);
-            break;
-        }
-        encoder_press_transport = target;
-        if (had_preview) {
-            audio::play(audio::Cue::MenuApply);
-        }
-        break;
-    }
 
     case Key::NativeAction: {
         // T..P are the six physical command slots ACT06..ACT11. Codex owns
@@ -856,8 +835,8 @@ void handle_press(const Press& press)
             // entirely -- and the page already draws an Enter cap.
             ui::notify_composer_control_select();
             const auto target = codex_micro::active_transport();
-            const bool sent = send_encoder_press_to(target)
-                           && codex_micro::send_key_to(target, "ENC", 0);
+            const bool sent = send_encoder_press_to(target);
+            encoder_press_transport = sent ? target : codex_micro::Transport::None;
             std::printf("CCP_UI|composer|confirm_via_enter|sent=%d\n", sent ? 1 : 0);
             if (!sent) ui::toast("DIAL", "no host", theme::kOrange);
             else audio::play(audio::Cue::MenuApply);

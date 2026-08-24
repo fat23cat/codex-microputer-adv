@@ -14,7 +14,7 @@ enum class Key : uint8_t {
     Digit, Record, Interrupt, Mute,
     // Reasoning depth and the model picker. Both are *relative*: the host only
     // accepts encoder detents and clicks, so there is no way to name a value.
-    EncoderLeft, EncoderRight, EncoderPress,
+    EncoderLeft, EncoderRight,
     // One of the host-configurable Codex Micro command slots ACT06..ACT11.
     // Press::digit carries the numeric suffix; ACT12 remains the Enter key.
     NativeAction,
