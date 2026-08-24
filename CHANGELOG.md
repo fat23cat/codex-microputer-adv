@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.2 — 2026-08-22
+
+- Took the pyramid out of the keycap. The taper was doing the work of a roof:
+  the base was eight pixels wider than the top over a seventeen-pixel wall. It
+  is now four over fifteen, on a slightly larger top -- a cap, not a spire.
+- Cut the corner chamfers back to a single pixel. Two rows off each tip plus a
+  two-pixel side flat gave the silhouette eight visible corners, all of them
+  large; at this size that is enough to lose the rhombus.
+- Seated the cap lower than the knob. It is the wider, heavier shape, and set
+  on the same line it reads as riding high.
+
 ## 0.9.1 — 2026-08-22
 
 - The keycap was a concertina. Stacked inside the keyline it had a moulding

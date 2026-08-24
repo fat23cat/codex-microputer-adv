@@ -815,15 +815,15 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
 int cap_half(int dy, int half_w, int half_h)
 {
     const int a = std::abs(dy);
-    if (a > half_h - 2) return 0;                       // top and bottom tips
+    if (a > half_h - 1) return 0;                       // top and bottom tips
     const int d = half_w - (half_w * a) / std::max(1, half_h);
-    return std::min(d, half_w - 2);                     // left and right tips
+    return std::min(d, half_w - 1);                     // left and right tips
 }
 
-constexpr int kCapW     = 22;
-constexpr int kCapH     = 11;
-constexpr int kCapWall  = 17;
-constexpr int kCapFlare = 8;   // a keycap is wider at the plate than at the top,
+constexpr int kCapW     = 24;
+constexpr int kCapH     = 12;
+constexpr int kCapWall  = 15;
+constexpr int kCapFlare = 4;   // a keycap is wider at the plate than at the top,
                                // and that taper is most of what tells the eye it
                                // is a key and not a box
 
@@ -987,7 +987,9 @@ void draw_composer_control_takeover()
             vline(ax + dir * k, 58 - 5 + k / 2, 11 - k, c);
     }
 
-    draw_keycap(186, 47, composer_key_press.x, base, copy);
+    // Seated lower than the knob on purpose. The cap is the wider, heavier
+    // shape of the two; set on the same line it reads as riding high.
+    draw_keycap(186, 54, composer_key_press.x, base, copy);
 
     draw_tracked_transparent("TURN", 76 - tracked_width("TURN", 2) / 2, 96, 2, text);
     draw_tracked_transparent("SELECT", 186 - tracked_width("SELECT", 2) / 2, 96, 2, text);
