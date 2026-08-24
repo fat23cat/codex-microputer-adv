@@ -1073,6 +1073,13 @@ extern "C" void app_main(void)
     }
     audio::init();
 
+    // The startup score goes out before the radio does. It is a second and a
+    // half of continuously fed DMA, and starting it after the radio put its
+    // first blocks in exactly the window where a bonded host reconnects and
+    // floods the device with RPC.
+    if (model::state.startup_sound_on)
+        audio::play(audio::Cue::Boot);
+
     companion_ble_start();
     if (model::state.usb_hid_enabled)
         companion_usb_start();
@@ -1081,8 +1088,6 @@ extern "C" void app_main(void)
     hostlink::emit("ble_start", true, bonds);
 
     publish_settings(false);
-    if (model::state.startup_sound_on)
-        audio::play(audio::Cue::Boot);
 
     uint32_t last_status_ms = 0;
     uint32_t offline_since_ms = 0;

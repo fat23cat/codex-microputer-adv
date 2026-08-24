@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.5 — 2026-08-22
+
+- Fixed the startup score sagging on boot. The speaker's mixer task was left on
+  the defaults: floating across both cores at priority 2 with 32 ms of DMA
+  cushion. One late wake-up -- easy to get in the second the radio connects and
+  the panel is pushing whole frames -- repeats or drops a block, and that is
+  heard as the music slowing rather than as a click. It now has a quarter
+  second of cushion and runs on the core that is not drawing, above the synth
+  worker that shares it.
+- The startup score is started before the radio, so its first blocks are queued
+  outside the window where a bonded host reconnects and floods the device.
+- Took libm off the boot score's sample path, the way the status scores already
+  had it: it was evaluating an exp() per note per sample. Rendering it fell
+  from 259 ms to well inside the splash.
+- The output rate is deliberately left at the driver default. Running it at
+  16 kHz to match the material saves a 4x resample, but that resample is also
+  the only low-pass between the scores and the amplifier, and without it the
+  top of every cue turns hard and rings.
+
 ## 0.8.4 — 2026-08-22
 
 - Fixed the legend. It was the projection of a horizontal rule laid along one

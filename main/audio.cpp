@@ -37,6 +37,23 @@ void ensure_speaker()
 {
     if (speaker_live) return;
     if (M5.Mic.isEnabled()) M5.Mic.end();
+    // The defaults leave the mixer task floating across both cores at priority
+    // 2 with 32 ms of DMA cushion. One late wake-up -- easy to get at boot,
+    // with the radio connecting and the panel pushing whole frames -- repeats
+    // or drops a block, and that is heard as the score sagging rather than as
+    // a click. So it gets a quarter second of cushion and runs on the core that
+    // is not drawing, above the synth worker that shares it.
+    //
+    // The output rate is deliberately left alone. Every cue here is 8 or 16 kHz
+    // and running the driver at 16 kHz would save it a 4x resample, but that
+    // resample is also the only low-pass between the material and the amplifier:
+    // at 16 kHz out the top of every score turns hard and rings.
+    auto cfg = M5.Speaker.config();
+    cfg.dma_buf_len      = 256;
+    cfg.dma_buf_count    = 16;
+    cfg.task_priority    = 3;
+    cfg.task_pinned_core = 1;
+    M5.Speaker.config(cfg);
     speaker_live = M5.Speaker.begin();
     // 110 was set for tone() cues, which are pure and carry easily. A percussive
     // sample spends most of its length decaying, so it needs the headroom.
@@ -848,7 +865,7 @@ void boot_music()
             const float local = t - pad_start;
             const float attack_time = composition.pad == StartupPad::Swell ? 0.26f : 0.075f;
             const float attack = motion::ease_out_cubic(std::min(1.f, local / attack_time));
-            const float decay = std::exp(-local /
+            const float decay = fast_decay(local /
                 (composition.pad == StartupPad::Swell ? 0.82f : 0.58f));
             const float end_fade = std::min(1.f, (kBootSeconds - t) / 0.12f);
             float modulation = 1.f;
@@ -875,7 +892,7 @@ void boot_music()
             const float attack_time = composition.voice == StartupVoice::Organ ? 0.035f
                                     : composition.voice == StartupVoice::Soft ? 0.020f : 0.008f;
             const float attack = std::min(1.f, local / attack_time);
-            const float env = attack * std::exp(-local / decay_time)
+            const float env = attack * fast_decay(local / decay_time)
                             * (static_cast<float>(event.level) / 255.f);
             lead += startup_voice(composition.voice, 6.28318f * note_hz[note] * local)
                   * env * 0.23f * note_gain[note];
