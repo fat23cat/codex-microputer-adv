@@ -2,6 +2,20 @@
 
 ## 0.8.5 — 2026-08-22
 
+- Rebuilt the keycap after looking at it magnified. Three things were wrong.
+  The dish was most of the top face, so what read was a tray with a bright rim
+  around it rather than a solid key; it is gone, replaced by a single line
+  under the two far edges, which is enough to break the plane and leaves the
+  face whole. The legend was two pixels of near-black -- a crowbar lying on the
+  cap -- and is now one pixel in a softer ink. And the tips were cut with a
+  curve fitted to four pixels, which lands differently on each of the four and
+  made the silhouette lumpy; they are cut with a fixed chamfer instead.
+- Gave the cap the proportions of the hardware. Codex Micro has low-profile
+  keys: a broad top and short, nearly straight walls. The flare no longer
+  applies above the top face either -- unioning it over the whole silhouette
+  let the base's far corners peek out past the top and gave the cap a
+  hexagonal brim, where on a real key the top overhangs and hides them.
+
 - Fixed the startup score sagging on boot. The speaker's mixer task was left on
   the defaults: floating across both cores at priority 2 with 32 ms of DMA
   cushion. One late wake-up -- easy to get in the second the radio connects and

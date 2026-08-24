@@ -819,25 +819,24 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
               cy + static_cast<int>(kKnobRy * 0.60f * sa) - 1, 3, 3, mark);
 }
 
-// Half-width of the keycap outline at row `dy`. A keycap in this projection is
-// a rhombus, and its edges have to stay straight or the object stops sitting on
-// the ground plane -- a superellipse turns it into a coin. So the edges are kept
-// exact and only the four tips are flattened, which is what rounding means at
-// this pixel size.
+// Half-width of the keycap outline at row `dy`. The edges of a cap in this
+// projection have to stay dead straight, or the object stops sitting on the
+// ground plane -- a superellipse turns it into a coin. So the rhombus is exact
+// and only the four tips are cut, which is what rounding means at this size.
+// The cut is a fixed chamfer rather than a curve, because a curve fitted to
+// four pixels lands differently on each tip and the silhouette goes lumpy.
 int cap_half(int dy, int half_w, int half_h)
 {
     const int a = std::abs(dy);
-    if (a > half_h) return 0;
-    const float d = half_w * (1.f - static_cast<float>(a) / static_cast<float>(half_h));
-    const float tip  = half_w * 0.10f;   // the flat left at the top and bottom
-    const float side = half_w - 3.f;     // and at the left and right
-    return static_cast<int>(std::min(std::max(d, tip), side));
+    if (a > half_h - 2) return 0;                       // top and bottom tips
+    const int d = half_w - (half_w * a) / std::max(1, half_h);
+    return std::min(d, half_w - 2);                     // left and right tips
 }
 
-constexpr int kCapW    = 26;
-constexpr int kCapH     = 13;
-constexpr int kCapWall  = 16;
-constexpr int kCapFlare = 5;   // a keycap is wider at the plate than at the top,
+constexpr int kCapW     = 28;
+constexpr int kCapH     = 14;
+constexpr int kCapWall  = 9;
+constexpr int kCapFlare = 2;   // a keycap is wider at the plate than at the top,
                                // and that taper is most of what tells the eye it
                                // is a key and not a box
 
@@ -847,6 +846,10 @@ constexpr int kCapFlare = 5;   // a keycap is wider at the plate than at the top
 // top and the walls separately leaves tabs sticking out at the four tips.
 int cap_body(int dy, int wall)
 {
+    // Only below the top face does the flare count. Unioning it over the whole
+    // silhouette let the base's far corners peek out past the top and gave the
+    // cap a hexagonal brim; on a real key the top overhangs and hides them.
+    if (dy <= 0) return cap_half(dy, kCapW, kCapH);
     int best = 0;
     const int span = std::max(1, wall);
     for (int s = 0; s <= wall; ++s) {
@@ -861,22 +864,22 @@ int cap_body(int dy, int wall)
 void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
 {
     const float down = motion::clamp01(press);
-    const int wall = kCapWall - static_cast<int>(down * 8.f);
+    const int wall = kCapWall - static_cast<int>(down * 5.f);
     const int top  = cy - static_cast<int>(down * 2.f);
 
     const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
     const uint16_t shade = mix(base, kInk,  static_cast<uint8_t>(copy * 70.f));
-    const uint16_t left  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.16f));
-    const uint16_t right = mix(base, kPaper, static_cast<uint8_t>(ink * 0.34f));
-    const uint16_t face  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.62f));
-    const uint16_t well  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.50f));
-    const uint16_t dish  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.86f));
+    const uint16_t left  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.14f));
+    const uint16_t right = mix(base, kPaper, static_cast<uint8_t>(ink * 0.38f));
+    const uint16_t face  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.66f));
+    const uint16_t rim   = mix(base, kPaper, static_cast<uint8_t>(ink * 0.86f));
+    const uint16_t brk   = mix(base, kPaper, static_cast<uint8_t>(ink * 0.48f));
     const uint16_t key   = mix(base, kPaper, ink);
-    const uint16_t mark  = mix(well, kInk,  static_cast<uint8_t>(copy * 235.f));
+    const uint16_t mark  = mix(face, kInk,  static_cast<uint8_t>(copy * 190.f));
 
     // Contact shadow, tightening as the cap goes down. Most of what sells the
     // travel is the shadow, not the two pixels the cap actually moves.
-    fill_ellipse(cx, top + kCapH + wall + 5 - static_cast<int>(down * 2.f),
+    fill_ellipse(cx, top + kCapH + wall + 2 - static_cast<int>(down * 2.f),
                  kCapW - 4 + static_cast<int>(down * 3.f), 3, shade);
 
     const int first = -kCapH - kOutline;
@@ -898,33 +901,40 @@ void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
         hline(cx - half, top + dy, half, left);
         hline(cx, top + dy, half + 1, right);
     }
-    // Top face, over them.
+    // The top face is one flat tone. It had a filled dish before, and at this
+    // size the dish was most of the cap: what read was a tray with a bright rim
+    // around it, not a solid key. The moulding is now stated by a single line
+    // under the two far edges -- enough to break the plane, small enough to
+    // leave the face whole.
     for (int dy = -kCapH; dy <= kCapH; ++dy) {
         const int half = cap_half(dy, kCapW, kCapH);
         if (half > 0) hline(cx - half, top + dy, half * 2 + 1, face);
     }
-
-    // The dish: a real recess, a shade back from the face with its far edge
-    // catching the light. A one-pixel inset outline could not be seen at all.
-    for (int dy = -kCapH + 4; dy <= kCapH - 4; ++dy) {
-        const int half = cap_half(dy, kCapW - 7, kCapH - 4);
-        if (half > 0) hline(cx - half, top + dy, half * 2 + 1, well);
+    for (int dy = -kCapH + 3; dy <= -1; ++dy) {
+        const int half = cap_half(dy, kCapW - 6, kCapH - 3);
+        if (half <= 0) continue;
+        hline(cx - half, top + dy, 2, rim);
+        hline(cx + half - 1, top + dy, 2, rim);
     }
-    for (int dx = -kCapW + 7; dx <= kCapW - 7; ++dx) {
-        const int rise = cap_half(dx, kCapH - 4, kCapW - 7);
-        if (rise > 0) fill_rect(cx + dx, top - rise, 1, 1, dish);
+    // Where the top face meets the walls there has to be a line, or the two
+    // planes fuse and the cap reads as a bowl.
+    for (int dy = 0; dy <= kCapH; ++dy) {
+        const int half = cap_half(dy, kCapW, kCapH);
+        if (half <= 0) continue;
+        hline(cx - half, top + dy, 2, brk);
+        hline(cx + half - 1, top + dy, 2, brk);
     }
 
-    // The legend. It is set in the plane of the cap, which means it is sheared
-    // by the projection: the glyph's own vertical runs down one isometric axis
-    // and its own horizontal down the other. Laying it along a single axis --
-    // which is what the first attempt did -- draws the projection of a
-    // horizontal rule, and that is why it read as a slot rather than a letter.
-    // Backslash falls from the far corner to the near one, so on screen it is a
-    // steep stroke down and to the right.
-    for (int t = -7; t <= 7; ++t) {
-        const int run = t >= 0 ? t / 2 : -((-t + 1) / 2);   // exactly two rows
-        fill_rect(cx + run, top + t, 2, 1, mark);           // per step, no kink
+    // The legend is set in the plane of the cap, so the projection shears it:
+    // the glyph's own vertical runs down one isometric axis and its horizontal
+    // down the other. Backslash falls from the far corner to the near one --
+    // on screen, a steep stroke down and to the right, one pixel wide, two rows
+    // per step. Laying it along a single axis instead, as the first attempt
+    // did, draws the projection of a horizontal rule, which is why it read as a
+    // slot; drawing it two pixels wide in near-black then made it a crowbar.
+    for (int t = -6; t <= 6; ++t) {
+        const int run = t >= 0 ? t / 2 : -((-t + 1) / 2);
+        fill_rect(cx + run, top + t, 1, 1, mark);
     }
 }
 
