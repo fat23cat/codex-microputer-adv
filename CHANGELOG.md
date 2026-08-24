@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.7 — 2026-08-24
+
+- The confirm hint is the return arrow itself, not the word, and it sits in the
+  bottom-right corner. At this size the mark is shorter than its name and it is
+  the same mark printed on the key. Diagonally opposite Esc, the two ways out
+  of the page bracket it instead of stacking into a list.
+
 ## 0.9.6 — 2026-08-24
 
 - Took the keycap off the control page. Its whole subject is the dial, and a

@@ -880,8 +880,20 @@ void draw_composer_control_takeover()
     // whose whole subject is the dial. Esc is the way out of every other
     // surface on the device, so it has to be the way out of this one too, and
     // has to say so.
-    draw_tracked_right("ENTER", kScreenW - 10, 8, 1, faint, base);
-    draw_tracked_right("ESC", kScreenW - 10, 18, 1, faint, base);
+    draw_tracked_right("ESC", kScreenW - 10, 8, 1, faint, base);
+    // Confirm is the return arrow itself rather than its name: at this size the
+    // mark is shorter than the word and it is the same mark that is printed on
+    // the key. It sits in the far corner, diagonally opposite Esc, so the two
+    // ways out of the page bracket it instead of stacking into a list.
+    {
+        const int ax = kScreenW - 18, ay = kScreenH - 16;
+        vline(ax + 8, ay, 6, faint);
+        hline(ax, ay + 5, 9, faint);
+        fill_rect(ax + 1, ay + 4, 1, 1, faint);
+        fill_rect(ax + 1, ay + 6, 1, 1, faint);
+        fill_rect(ax + 2, ay + 3, 1, 1, faint);
+        fill_rect(ax + 2, ay + 7, 1, 1, faint);
+    }
 
     // The host's lamps are not drawn. In this mode their pattern is the host's
     // own UI state, not six agent statuses, so a row of them under the

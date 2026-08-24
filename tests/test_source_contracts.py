@@ -103,8 +103,11 @@ require("main/ui.cpp",
         r"draw_knob\(kScreenW / 2 \+ lean,",
         "the dial must sit on the centre line with its chevrons")
 require("main/ui.cpp",
-        r'draw_tracked_right\("ENTER", kScreenW - 10, 8, 1, faint, base\);',
-        "the confirm key must be named in the same hint style as Esc")
+        r"const int ax = kScreenW - 18, ay = kScreenH - 16;[\s\S]{0,320}"
+        r"hline\(ax, ay \+ 5, 9, faint\);",
+        "the confirm must be marked by its own arrow in the far corner")
+forbid("main/ui.cpp", r'draw_tracked_right\("ENTER"',
+       "the confirm is a mark, not a word")
 require("main/ui.cpp",
         r"constexpr int kOutline  = 2;",
         "the instrument must carry a keyline heavy enough to survive the grid")
