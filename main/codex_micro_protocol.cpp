@@ -184,6 +184,12 @@ bool apply_thread_lights(cJSON* params, session_sync::Tracker& session)
         }
     }
     if (!any_lit) {
+        // Codex blanks all six when it closes a control surface. That is the
+        // host saying the picker is gone, and it is the only honest way for the
+        // device to know -- so the control page leaves on it rather than on a
+        // timer of ours.
+        if (ui::composer_control_active())
+            ui::note_composer_control_closed();
         for (auto& task : model::state.tasks)
             task.lighting_interrupted = true;
         if (model::state.host_threads_enabled) {
@@ -226,6 +232,24 @@ bool apply_thread_lights(cJSON* params, session_sync::Tracker& session)
             if (cJSON_IsNumber(brightness))
                 preview_level[id->valueint] = std::clamp(
                     static_cast<float>(brightness->valuedouble), 0.f, 1.f);
+        }
+        // The other way Codex signals a closed surface is to flash all six the
+        // same white. A picker preview is never uniform -- it is showing a
+        // value -- so a uniform lit frame is a close, not a state.
+        bool uniform_white = true;
+        for (int i = 0; i < 6; ++i) {
+            const uint32_t c = preview_rgb[i];
+            if (c != preview_rgb[0]
+                || ((c >> 16) & 0xff) < 0xc0 || ((c >> 8) & 0xff) < 0xc0
+                || (c & 0xff) < 0xc0) {
+                uniform_white = false;
+                break;
+            }
+        }
+        if (uniform_white) {
+            ui::note_composer_control_closed();
+            std::printf("CCP_NATIVE|thstatus|picker_closed|uniform\n");
+            return false;
         }
         ui::note_composer_control_preview();
         ui::note_composer_control_lamps(preview_rgb, preview_level);

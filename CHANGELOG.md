@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.0 — 2026-08-22
+
+- Weighted the keycap against the knob: a thicker wall and a lower seat, so the
+  two objects sit as a pair rather than a tall one beside a flat one.
+
+- The control page now closes on the host's own signal and nothing else. Codex
+  blanks all six lamps, or flashes them the same white, when it closes a
+  control surface -- so that frame takes the page down. Every timer tried for
+  this was the device guessing at a state only Codex knows, and each one cut a
+  selection short: a fixed wait after the click, then a test of the host's
+  silence, then an eight-second idle. All three are gone.
+- Nothing local closes the page any more except Esc. It stays for as long as
+  the user takes. A uniform lit frame is read as a close rather than a state
+  because a picker preview is never uniform -- it is showing a value.
+- Both outcomes are on the wire: `thstatus|picker_closed|uniform` and
+  `CCP_UI|composer|closed_by_host`.
+
 ## 0.8.8 — 2026-08-22
 
 - The keycap travels the right way. It was moving its top face up while the

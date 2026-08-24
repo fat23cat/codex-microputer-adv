@@ -64,6 +64,9 @@ void notify_composer_control_select();
 // Mirror the host's own six-lamp preview frame onto the control page. Colours
 // are rgb888, levels 0..1, six of each.
 void note_composer_control_lamps(const uint32_t* rgb, const float* level);
+// Codex blanks or whites out all six lamps when it closes a control surface.
+// That frame, not a timer, is what takes the page down.
+void note_composer_control_closed();
 void note_composer_control_preview();
 void cancel_status_announcements();
 

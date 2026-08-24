@@ -90,10 +90,6 @@ float composer_lamp_age = 99.f;
 // jumps -- the same reason every marker on the device is a spring.
 motion::Spring composer_knob_angle;
 motion::Spring composer_key_press;
-// A confirmed selection closes the host's picker, so the page follows it out.
-// It waits out the keycap travel first: closing on the same frame as the press
-// threw the object away before the user saw it move.
-float composer_confirm_age = -1.f;
 float composer_key_hold = -1.f;   // the cap stays down long enough to be seen
 constexpr float kDetentRadians = 0.5236f;   // 30 degrees: twelve flutes, one per detent
 float marquee_hold = 0.f;
@@ -836,7 +832,7 @@ int cap_half(int dy, int half_w, int half_h)
 
 constexpr int kCapW     = 28;
 constexpr int kCapH     = 14;
-constexpr int kCapWall  = 9;
+constexpr int kCapWall  = 13;
 constexpr int kCapFlare = 2;   // a keycap is wider at the plate than at the top,
                                // and that taper is most of what tells the eye it
                                // is a key and not a box
@@ -1017,7 +1013,7 @@ void draw_composer_control_takeover()
             vline(ax + dir * k, 50 + oy - 5 + k / 2, 11 - k, c);
     }
 
-    draw_keycap(186, 46 + oy, composer_key_press.x, base, copy);
+    draw_keycap(186, 52 + oy, composer_key_press.x, base, copy);
 
     draw_tracked_transparent("TURN", 76 - tracked_width("TURN", 2) / 2, 90 + oy, 2, text);
     draw_tracked_transparent("SELECT", 186 - tracked_width("SELECT", 2) / 2, 90 + oy, 2, text);
@@ -2037,7 +2033,6 @@ void set_composer_control_active(bool active)
     composer_control_idle = active ? 0.f : 99.f;
     composer_control_step_age = 99.f;
     composer_control_step_dir = 0;
-    composer_confirm_age = -1.f;
     composer_key_hold = -1.f;
     if (active) {
         composer_knob_angle.snap(0.f);
@@ -2084,10 +2079,6 @@ void notify_composer_control_step(int direction)
         set_composer_control_active(true);
         composer_control_open_sound_pending = true;
     }
-    // A detent means the user is still choosing, whatever the last click may
-    // have looked like. It calls off any pending exit outright -- the page must
-    // never close out from under a selection in progress.
-    composer_confirm_age = -1.f;
     composer_control_step_dir = direction < 0 ? -1 : 1;
     composer_control_step_age = 0.f;
     composer_control_idle = 0.f;
@@ -2104,7 +2095,6 @@ void notify_composer_control_select()
     composer_key_press.snap(1.f);
     composer_key_hold = 0.f;
     composer_control_idle = 0.f;
-    composer_confirm_age = 0.f;
     invalidate();
 }
 
@@ -2123,12 +2113,18 @@ void note_composer_control_lamps(const uint32_t* rgb, const float* level)
     }
     composer_lamp_valid = true;
     composer_lamp_age = 0.f;
-    if (composer_confirm_age >= 0.f) composer_confirm_age = 0.f;
     if (lit >= 0) {
         composer_lamp_lit = lit;
         composer_lamp_marker.to(static_cast<float>(lit));
     }
     invalidate();
+}
+
+void note_composer_control_closed()
+{
+    if (!composer_control_target) return;
+    std::printf("CCP_UI|composer|closed_by_host\n");
+    dismiss_composer_control_preview();
 }
 
 void note_composer_control_preview()
@@ -2145,10 +2141,6 @@ void note_composer_control_preview()
         // off the pending exit: a click on Micro can just as easily step into a
         // submenu or cycle a value, and the device cannot tell which from the
         // click alone. It can tell from this.
-        if (composer_confirm_age >= 0.f) {
-            std::printf("CCP_UI|composer|confirm_hold|host_lit\n");
-            composer_confirm_age = 0.f;   // the host answered; start waiting again
-        }
         composer_control_idle = 0.f;
         dirty = true;
         return;
@@ -2352,22 +2344,13 @@ void service()
                 composer_key_hold = -1.f;
             }
         }
-        // After a click the page waits for the host to say whether its surface
-        // survived, and any frame from it resets the wait. A fixed 0.45 s was
-        // too short to be that answer: a click has to cross the radio, be drawn
-        // by the host and come back, and the all-off frame the host sends while
-        // it rebuilds its lights never even reached the cancel. So the test is
-        // now silence, not elapsed time -- the page leaves when the host has
-        // stopped talking for a beat, and stays for as long as it keeps lit.
-        if (composer_confirm_age >= 0.f) {
-            composer_confirm_age += dt;
-            animating = true;
-            if (composer_confirm_age >= 1.2f) {
-                std::printf("CCP_UI|composer|confirm_exit|host_silent\n");
-                dismiss_composer_control_preview();
-            }
-        }
-        if (composer_control_idle >= 8.f) set_composer_control_active(false);
+        // Nothing here closes the page. Every timer tried for this -- a fixed
+        // wait after the click, then a test of the host's silence -- was the
+        // device guessing at a state only Codex knows, and each one cut a
+        // selection short. Codex says it plainly: it blanks or whites out all
+        // six lamps when a control surface closes. That frame takes the page
+        // down; so does Esc. Until one of them arrives it stays, however long
+        // the user takes.
         else animating = true;
     }
 

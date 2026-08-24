@@ -40,13 +40,22 @@ require("SCENARIOS.ru.md", r"фиксируется на 1,85 секунды",
 require("main/codex_micro_protocol.cpp",
         r'"lights\.preview"[\s\S]{0,180}ui::note_composer_control_preview\(\)',
         "native light preview must feed the composer control overlay")
-require("main/ui.cpp", r"if \(composer_control_idle >= 8\.f\)\s*set_composer_control_active\(false\)",
-        "composer control overlay must not remain stuck")
+require("main/ui.cpp",
+        r"void note_composer_control_closed\(\)[\s\S]{0,200}dismiss_composer_control_preview\(\)",
+        "the host's own close frame must take the control page down")
+require("main/codex_micro_protocol.cpp",
+        r"if \(!any_lit\) \{[\s\S]{0,400}note_composer_control_closed\(\)",
+        "an all-off frame must be read as the host closing its surface")
+require("main/codex_micro_protocol.cpp",
+        r"bool uniform_white = true;[\s\S]{0,600}note_composer_control_closed\(\)",
+        "a uniform white frame must be read as the host closing its surface")
+forbid("main/ui.cpp", r"composer_control_idle >= 8\.f",
+       "the control page must not close on a timer of ours; only the host or Esc")
 require("main/ui.cpp",
         r"void note_composer_control_preview\(\)[\s\S]{0,450}if \(composer_control_target\)",
         "late light preview must not reopen a confirmed control")
 require("main/codex_micro_protocol.cpp",
-        r"if \(selection_guarded\(\) \|\| ui::composer_control_active\(\)\)[\s\S]{0,1700}picker_preview_mirrored[\s\S]{0,80}return false;",
+        r"if \(selection_guarded\(\) \|\| ui::composer_control_active\(\)\)[\s\S]{0,2400}picker_preview_mirrored[\s\S]{0,80}return false;",
         "picker lamp preview must bypass the task status reducer")
 require("main/codex_micro_protocol.cpp",
         r"ui::note_composer_control_lamps\(preview_rgb, preview_level\)",
@@ -55,10 +64,6 @@ require("main/ui.cpp",
         r"void notify_composer_control_step\(int direction\)[\s\S]{0,420}"
         r"if \(!composer_control_target\) \{[\s\S]{0,220}set_composer_control_active\(true\)",
         "turning the dial must open the control surface, not only pressing it")
-require("main/ui.cpp",
-        r"void notify_composer_control_step\(int direction\)[\s\S]{0,700}"
-        r"composer_confirm_age = -1\.f;",
-        "a detent must call off any pending exit; a selection in progress wins")
 require("main/ui.cpp",
         r"const int travel = static_cast<int>\(down \* 5\.f\);[\s\S]{0,120}"
         r"const int top  = cy \+ travel;",
@@ -427,16 +432,8 @@ require("main/main.cpp",
         r"had_preview[\s\S]{0,300}notify_composer_control_select[\s\S]{0,160}else \{\s*ui::allow_composer_control_preview",
         "encoder press must explicitly toggle the composer control overlay")
 require("main/ui.cpp",
-        r"composer_confirm_age \+= dt;[\s\S]{0,220}"
-        r"if \(composer_confirm_age >= 1\.2f\) \{",
-        "after a click the page must wait on the host, not on a stopwatch")
-require("main/ui.cpp",
         r"composer_key_hold \+= dt;[\s\S]{0,160}composer_key_press\.to\(0\.f\)",
         "the keycap must stay down long enough for the press to be seen")
-require("main/ui.cpp",
-        r"void note_composer_control_preview\(\)[\s\S]{0,1000}"
-        r"composer_confirm_age = 0\.f;",
-        "a host still painting its lamps must call off the page's exit")
 require("main/ui.cpp",
         r"for \(int k = 0; k < 24; \+\+k\)[\s\S]{0,500}vline\(x, y, kKnobWall",
         "the knob must be knurled around its wall, like the Work Louder encoder")
