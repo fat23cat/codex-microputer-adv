@@ -419,9 +419,13 @@ require("main/main.cpp",
         r"had_preview[\s\S]{0,300}notify_composer_control_select[\s\S]{0,160}else \{\s*ui::allow_composer_control_preview",
         "encoder press must explicitly toggle the composer control overlay")
 require("main/ui.cpp",
-        r"composer_confirm_age \+= dt;[\s\S]{0,140}"
-        r"if \(composer_confirm_age >= 0\.22f\) dismiss_composer_control_preview\(\)",
+        r"composer_confirm_age \+= dt;[\s\S]{0,180}"
+        r"if \(composer_confirm_age >= 0\.45f\) dismiss_composer_control_preview\(\)",
         "a confirmed selection must let the keycap travel before the page leaves")
+require("main/ui.cpp",
+        r"void note_composer_control_preview\(\)[\s\S]{0,1000}"
+        r"composer_confirm_age = -1\.f;",
+        "a host still painting its lamps must call off the page's exit")
 require("main/ui.cpp",
         r"for \(int k = 0; k < 24; \+\+k\)[\s\S]{0,500}vline\(x, y, kKnobWall",
         "the knob must be knurled around its wall, like the Work Louder encoder")

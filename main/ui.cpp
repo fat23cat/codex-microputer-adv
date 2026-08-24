@@ -2110,6 +2110,7 @@ void note_composer_control_lamps(const uint32_t* rgb, const float* level)
     }
     composer_lamp_valid = true;
     composer_lamp_age = 0.f;
+    composer_confirm_age = -1.f;
     if (lit >= 0) {
         composer_lamp_lit = lit;
         composer_lamp_marker.to(static_cast<float>(lit));
@@ -2126,6 +2127,12 @@ void note_composer_control_preview()
     if (composer_control_suppressed_until_ms != 0
         && static_cast<int32_t>(composer_control_suppressed_until_ms - now) > 0) return;
     if (composer_control_target) {
+        // The host is still painting its lamps, so its surface did not close --
+        // whatever the click did, it was not a confirmation that ended it. Call
+        // off the pending exit: a click on Micro can just as easily step into a
+        // submenu or cycle a value, and the device cannot tell which from the
+        // click alone. It can tell from this.
+        composer_confirm_age = -1.f;
         composer_control_idle = 0.f;
         dirty = true;
         return;
@@ -2321,10 +2328,14 @@ void service()
         }
         // Mouse/keyboard confirmation on the Mac does not send an encoder
         // release back to the device. Never leave the overlay stuck forever.
+        // After a click the page waits, both for the keycap to finish travelling
+        // and for the host to say whether its surface survived. A lamp frame in
+        // that window cancels the exit; silence means the picker closed and the
+        // page follows it out.
         if (composer_confirm_age >= 0.f) {
             composer_confirm_age += dt;
             animating = true;
-            if (composer_confirm_age >= 0.22f) dismiss_composer_control_preview();
+            if (composer_confirm_age >= 0.45f) dismiss_composer_control_preview();
         }
         if (composer_control_idle >= 8.f) set_composer_control_active(false);
         else animating = true;

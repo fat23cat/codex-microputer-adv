@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.6 — 2026-08-22
+
+- The page no longer leaves while the host is still lit. A click on Micro's
+  dial does not always close its picker -- it can step into a submenu or cycle
+  a value, and the device cannot tell which from the click alone. It can tell
+  from what happens next: after a click the page now waits out both the keycap
+  travel and a short window for the host, and a lamp frame arriving in that
+  window calls off the exit. Silence still means the picker closed, and the
+  page follows it out.
+
 ## 0.8.5 — 2026-08-22
 
 - Rebuilt the keycap after looking at it magnified. Three things were wrong.
