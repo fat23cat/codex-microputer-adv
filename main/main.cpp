@@ -720,6 +720,15 @@ void handle_press(const Press& press)
         break;
 
     case Key::Back:
+        // Esc is the way out of every surface on the device, so it has to work
+        // on the host control page too. Micro's HID vocabulary has no escape,
+        // so this is deliberately local: the page leaves and quarantines itself
+        // against an immediate reopen, and nothing is claimed to the host.
+        if (ui::composer_control_active()) {
+            ui::dismiss_composer_control_preview();
+            audio::play(audio::Cue::Select);
+            break;
+        }
         // Back never leaves the app. Handing the device back to M5Apps is a
         // deliberate action from Settings, because it costs a reboot and
         // makes the companion unreachable until the user returns to it.

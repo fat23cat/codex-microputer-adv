@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.2 — 2026-08-22
+
+- The keycap is a keycap now: rounded corners instead of four rhombus spikes,
+  a dished inset on the top face, and the `\` set in the plane of that face at
+  one pixel of fall per two of run, so it reads as printed on the cap rather
+  than laid over it.
+- Both objects carry a two-pixel keyline. They are drawn as oversized
+  silhouettes with the faces sunk into them, which keeps the weight even all
+  the way round instead of thinning wherever a diagonal meets the pixel grid.
+- The knob is taller and narrower, closer to the machined encoder's real
+  proportions, and its base ring reads clearly as the host's lamp colour
+  because it now sits outside the keyline.
+- Escape leaves the control page. It is the way out of every other surface on
+  the device and did nothing here. Micro's HID vocabulary has no escape, so
+  this is deliberately local: the page leaves with the same quarantine as a
+  timeout and nothing is claimed to the host. The page says ESC in its corner.
+
 ## 0.8.1 — 2026-08-22
 
 - Redrew the dial to the shape of the real one. Codex Micro is Work Louder

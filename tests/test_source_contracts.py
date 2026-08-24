@@ -73,6 +73,16 @@ require("main/main.cpp",
         r"[\s\S]{0,220}ui::notify_composer_control_step\(right \? 1 : -1\);",
         "a successful detent must always reach the control surface")
 require("main/main.cpp",
+        r"case Key::Back:[\s\S]{0,420}if \(ui::composer_control_active\(\)\) \{"
+        r"[\s\S]{0,120}dismiss_composer_control_preview",
+        "escape must leave the host control page like every other surface")
+require("main/ui.cpp",
+        r"int cap_half\(int dy, int half_w, int half_h\)",
+        "the keycap outline must be a rounded rhombus, not a spiked one")
+require("main/ui.cpp",
+        r"constexpr int kOutline  = 2;",
+        "the instrument must carry a keyline heavy enough to survive the grid")
+require("main/main.cpp",
         r"Cue::StepRight\s*:\s*audio::Cue::StepLeft",
         "encoder detents must have directional audio")
 require("main/main.cpp",
@@ -416,7 +426,7 @@ require("main/ui.cpp",
         r"for \(int k = 0; k < 24; \+\+k\)[\s\S]{0,500}vline\(x, y, kKnobWall",
         "the knob must be knurled around its wall, like the Work Louder encoder")
 require("main/ui.cpp",
-        r"fill_ellipse\(cx, ring_y, kKnobRx \+ 1, kKnobRy, lit\)",
+        r"fill_ellipse\(cx, ring_y \+ 1, kKnobRx \+ kOutline \+ 1, kKnobRy \+ 1, lit\)",
         "the knob must carry the host lamp colour in its base light ring")
 require("main/ui.cpp",
         r"dismiss_composer_control_preview\(\)[\s\S]{0,180}suppressed_until_ms = lgfx::millis\(\) \+ 5000",

@@ -755,9 +755,12 @@ void draw_ellipse(int cx, int cy, int rx, int ry, uint16_t c)
 // the silhouette has no taper, and the ring is not decoration -- it carries the
 // host's own lamp colour, which is the only thing the device truthfully knows
 // about the surface being adjusted.
-constexpr int kKnobRx   = 33;
-constexpr int kKnobRy   = 13;
-constexpr int kKnobWall = 17;
+constexpr int kKnobRx   = 25;
+constexpr int kKnobRy   = 10;
+constexpr int kKnobWall = 27;
+constexpr int kOutline  = 2;   // the instrument is drawn on the surface, and
+                               // reads as applied to it only if the keyline is
+                               // heavy enough to survive the pixel grid
 
 void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
                float glow_level, float copy)
@@ -766,24 +769,31 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
     const uint16_t wall = mix(base, kInk,  static_cast<uint8_t>(copy * 46.f));
     const uint16_t cap  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.22f));
     const uint16_t knur = mix(base, kPaper, static_cast<uint8_t>(ink * 0.44f));
-    const uint16_t edge = mix(base, kPaper, static_cast<uint8_t>(ink * 0.86f));
+    const uint16_t edge = mix(base, kPaper, static_cast<uint8_t>(ink * 0.58f));
     const uint16_t mark = mix(base, kPaper, ink);
 
-    // Light ring first: the body is drawn over it, so what survives is a rim of
-    // colour bleeding out from under the base, exactly as it does in aluminium.
     const int ring_y = cy + kKnobWall;
+
+    // Light ring first, then the keyline, then the body. What survives is a
+    // halo of the host's own lamp colour bleeding out from under the base,
+    // which is how it behaves in aluminium.
     const uint16_t lit = mix(base, glow,
         static_cast<uint8_t>(copy * (0.30f + 0.70f * motion::clamp01(glow_level)) * 255.f));
-    fill_ellipse(cx, ring_y + 1, kKnobRx + 3, kKnobRy + 1, mix(base, lit, 170));
-    fill_ellipse(cx, ring_y, kKnobRx + 1, kKnobRy, lit);
+    fill_ellipse(cx, ring_y + 2, kKnobRx + kOutline + 3, kKnobRy + 2,
+                 mix(base, lit, 170));
+    fill_ellipse(cx, ring_y + 1, kKnobRx + kOutline + 1, kKnobRy + 1, lit);
+
+    // The keyline, drawn as an oversized silhouette the body is then sunk into.
+    fill_ellipse(cx, cy, kKnobRx + kOutline, kKnobRy + kOutline, mark);
+    fill_rect(cx - kKnobRx - kOutline, cy, (kKnobRx + kOutline) * 2 + 1,
+              kKnobWall, mark);
+    fill_ellipse(cx, ring_y, kKnobRx + kOutline, kKnobRy + kOutline, mark);
 
     // Body: bottom cap, straight wall, flat top. No taper, no shading ramp.
     fill_ellipse(cx, ring_y, kKnobRx, kKnobRy, wall);
     fill_rect(cx - kKnobRx, cy, kKnobRx * 2 + 1, kKnobWall, wall);
     fill_ellipse(cx, cy, kKnobRx, kKnobRy, cap);
     draw_ellipse(cx, cy, kKnobRx, kKnobRy, edge);
-    vline(cx - kKnobRx, cy, kKnobWall, edge);
-    vline(cx + kKnobRx, cy, kKnobWall, edge);
 
     // Knurling: twenty-four flutes around the wall, so one 30-degree detent
     // walks the pattern by exactly two -- unmistakable, and never a blur.
@@ -793,7 +803,7 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
         if (sa <= 0.08f) continue;          // only the near half of the wall
         const int x = cx + static_cast<int>(kKnobRx * std::cos(a));
         const int y = cy + static_cast<int>(kKnobRy * sa);
-        vline(x, y, kKnobWall - static_cast<int>((1.f - sa) * 3.f), knur);
+        vline(x, y, kKnobWall - static_cast<int>((1.f - sa) * 4.f), knur);
     }
 
     // The index. A notch cut through the wall plus a bar on the cap: together
@@ -802,18 +812,27 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
     const int ix = cx + static_cast<int>(kKnobRx * std::cos(angle));
     const int iy = cy + static_cast<int>(kKnobRy * sa);
     if (sa > 0.f) fill_rect(ix - 1, iy, 3, kKnobWall, mark);
-    fill_rect(cx + static_cast<int>(kKnobRx * 0.62f * std::cos(angle)) - 1,
-              cy + static_cast<int>(kKnobRy * 0.62f * sa) - 1, 3, 3, mark);
+    fill_rect(cx + static_cast<int>(kKnobRx * 0.60f * std::cos(angle)) - 1,
+              cy + static_cast<int>(kKnobRy * 0.60f * sa) - 1, 3, 3, mark);
 }
 
-// The `\` keycap, in the same projection: a real cube with three distinct
-// faces. A single flat band read as a sticker; the eye needs the left and
-// right walls to differ before it accepts the object as solid.
+// Half-width of the keycap outline at row `dy`. A pure rhombus gives four sharp
+// spikes, which no keycap has; the exponent rounds the corners while keeping the
+// isometric proportions, so the shape still sits on the same ground plane.
+int cap_half(int dy, int half_w, int half_h)
+{
+    const float t = std::fabs(static_cast<float>(dy)) / static_cast<float>(half_h);
+    if (t >= 1.f) return 0;
+    return static_cast<int>(half_w * std::pow(1.f - std::pow(t, 1.45f), 1.f / 1.45f));
+}
+
+// The `\` keycap. A cube read as a sticker, so this is built as a cap: rounded
+// corners, a dished top inset, a heavy keyline, and three faces that differ.
 void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
 {
-    constexpr int kHalfW = 27;
-    constexpr int kHalfH = 14;
-    constexpr int kWall  = 13;
+    constexpr int kHalfW = 28;
+    constexpr int kHalfH = 15;
+    constexpr int kWall  = 14;
 
     const float down = motion::clamp01(press);
     const int wall = kWall - static_cast<int>(down * 7.f);
@@ -824,38 +843,55 @@ void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
     const uint16_t left  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.16f));
     const uint16_t right = mix(base, kPaper, static_cast<uint8_t>(ink * 0.34f));
     const uint16_t face  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.62f));
-    const uint16_t edge  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.92f));
+    const uint16_t dish  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.74f));
+    const uint16_t key   = mix(base, kPaper, ink);
     const uint16_t mark  = mix(face, kInk,  static_cast<uint8_t>(copy * 235.f));
 
-    // Contact shadow: it tightens as the cap goes down, which is most of what
-    // sells the travel.
-    fill_ellipse(cx, top + kHalfH + wall + 3 - static_cast<int>(down * 2.f),
-                 kHalfW - 4 + static_cast<int>(down * 3.f), 3, shade);
+    // Contact shadow, tightening as the cap goes down. Most of what sells the
+    // travel is the shadow, not the two pixels the cap actually moves.
+    fill_ellipse(cx, top + kHalfH + wall + 4 - static_cast<int>(down * 2.f),
+                 kHalfW - 5 + static_cast<int>(down * 3.f), 3, shade);
 
-    // Walls, column by column along the two near edges of the diamond.
+    // Keyline: the whole silhouette, oversized, with the faces sunk into it.
+    for (int dy = -kHalfH - kOutline; dy <= kHalfH + kOutline; ++dy) {
+        const int half = cap_half(dy, kHalfW + kOutline, kHalfH + kOutline);
+        if (half <= 0) continue;
+        hline(cx - half, top + dy, half * 2 + 1, key);
+        if (dy >= 0) hline(cx - half, top + dy + wall, half * 2 + 1, key);
+    }
+    for (int dx = -kHalfW - kOutline; dx <= kHalfW + kOutline; ++dx) {
+        const float t = std::fabs(static_cast<float>(dx))
+                      / static_cast<float>(kHalfW + kOutline);
+        const int y = top + static_cast<int>((kHalfH + kOutline)
+            * std::pow(std::max(0.f, 1.f - std::pow(t, 1.45f)), 1.f / 1.45f));
+        vline(cx + dx, y, wall + 1, key);
+    }
+
+    // Walls, then the top face.
     for (int dx = -kHalfW; dx <= kHalfW; ++dx) {
-        const int y = top + kHalfH - kHalfH * std::abs(dx) / kHalfW;
+        const int y = top + cap_half(dx, kHalfH, kHalfW);
         vline(cx + dx, y, wall + 1, dx < 0 ? left : right);
     }
-    // Top face.
     for (int dy = -kHalfH; dy <= kHalfH; ++dy) {
-        const int half = kHalfW - kHalfW * std::abs(dy) / kHalfH;
+        const int half = cap_half(dy, kHalfW, kHalfH);
+        if (half <= 0) continue;
         hline(cx - half, top + dy, half * 2 + 1, face);
     }
-    canvas.drawLine(cx - kHalfW + layer_dx, top, cx + layer_dx, top - kHalfH, edge);
-    canvas.drawLine(cx + layer_dx, top - kHalfH, cx + kHalfW + layer_dx, top, edge);
-    canvas.drawLine(cx - kHalfW + layer_dx, top + wall,
-                    cx + layer_dx, top + kHalfH + wall, edge);
-    canvas.drawLine(cx + layer_dx, top + kHalfH + wall,
-                    cx + kHalfW + layer_dx, top + wall, edge);
-    vline(cx - kHalfW, top, wall + 1, edge);
-    vline(cx + kHalfW, top, wall + 1, edge);
+    // The dish: an inset repeat of the same outline, which is what makes a flat
+    // top read as a moulded cap rather than a painted lid.
+    for (int dy = -kHalfH + 4; dy <= kHalfH - 4; ++dy) {
+        const int half = cap_half(dy, kHalfW - 7, kHalfH - 4);
+        if (half <= 0) continue;
+        fill_rect(cx - half, top + dy, 1, 1, dish);
+        fill_rect(cx + half, top + dy, 1, 1, dish);
+    }
 
-    // The legend lies on the face, along the same axis as the near-left edge,
-    // so it reads as printed on the cap rather than floating above it.
-    for (int i = 0; i < 2; ++i)
-        canvas.drawLine(cx - 12 + layer_dx, top - 7 + i,
-                        cx + 12 + layer_dx, top + 5 + i, mark);
+    // The legend lies in the plane of the cap: it runs down the isometric axis
+    // at one pixel of fall per two of run, so it reads as printed on the face.
+    for (int dx = -11; dx <= 11; ++dx) {
+        const int y = top - 6 + (dx + 11) / 2;
+        fill_rect(cx + dx, y, 1, 2, mark);
+    }
 }
 
 // ---------------------------------------------------- composer control preview
@@ -911,7 +947,7 @@ void draw_composer_control_takeover()
         ? composer_lamp_colour[lit_lamp] : kPaper;
     const float glow_level = (composer_lamp_valid && lit_lamp >= 0)
         ? composer_lamp_level[lit_lamp].x : 0.f;
-    draw_knob(78 + lean, 48, composer_knob_angle.x, base, glow, glow_level, copy);
+    draw_knob(76 + lean, 36, composer_knob_angle.x, base, glow, glow_level, copy);
 
     for (int side = 0; side < 2; ++side) {
         const int dir = side == 0 ? -1 : 1;
@@ -920,15 +956,18 @@ void draw_composer_control_takeover()
             ? mix(base, kPaper, static_cast<uint8_t>(
                   copy * std::min(255.f, 70.f + step * 185.f)))
             : faint;
-        const int ax = side == 0 ? 28 : 128;
+        const int ax = side == 0 ? 33 : 119;
         for (int k = 0; k < 6; ++k)
-            vline(ax + dir * k, 56 - 5 + k / 2, 11 - k, c);
+            vline(ax + dir * k, 50 - 5 + k / 2, 11 - k, c);
     }
 
-    draw_keycap(188, 48, composer_key_press.x, base, copy);
+    draw_keycap(186, 46, composer_key_press.x, base, copy);
 
-    draw_tracked_transparent("TURN", 78 - tracked_width("TURN", 2) / 2, 88, 2, text);
-    draw_tracked_transparent("SELECT", 188 - tracked_width("SELECT", 2) / 2, 88, 2, text);
+    draw_tracked_transparent("TURN", 76 - tracked_width("TURN", 2) / 2, 90, 2, text);
+    draw_tracked_transparent("SELECT", 186 - tracked_width("SELECT", 2) / 2, 90, 2, text);
+    // Esc is the way out of every other surface on the device, so it has to be
+    // the way out of this one too, and has to say so.
+    draw_tracked_right("ESC", kScreenW - 10, 8, 1, faint, base);
 
     // The six agent lamps, mirrored from the host onto the exact columns the
     // six task cells occupy. Until a preview frame arrives they are empty
@@ -1772,7 +1811,7 @@ const uint16_t* capture_frame(const char* scene)
         composer_control_amount.snap(1.f);
         {
             const uint32_t rgb[6] = {0x2f6bd8, 0x2f6bd8, 0x2f6bd8,
-                                     0xf2f0e6, 0x3a3a3a, 0x3a3a3a};
+                                     0xffa733, 0x3a3a3a, 0x3a3a3a};
             const float level[6] = {0.35f, 0.35f, 0.35f, 1.f, 0.f, 0.f};
             note_composer_control_lamps(rgb, level);
             for (int i = 0; i < kLampCount; ++i)
