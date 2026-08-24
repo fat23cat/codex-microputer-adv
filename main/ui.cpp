@@ -834,27 +834,34 @@ int cap_half(int dy, int half_w, int half_h)
     return static_cast<int>(std::min(std::max(d, tip), side));
 }
 
-// The whole cap's silhouette at row `dy`: the top face above, the straight
-// extrusion below it. Used to lay the keyline down as one dilated shape, which
-// is the only way to get an even weight all the way round -- outlining the top
-// and the walls separately leaves tabs sticking out at the four tips.
-int cap_silhouette(int dy, int half_w, int half_h, int wall)
+constexpr int kCapW    = 26;
+constexpr int kCapH     = 13;
+constexpr int kCapWall  = 16;
+constexpr int kCapFlare = 5;   // a keycap is wider at the plate than at the top,
+                               // and that taper is most of what tells the eye it
+                               // is a key and not a box
+
+// Silhouette of the whole tapered cap at row `dy`, measured from the centre of
+// the top face: the union of the top outline swept down and outwards to the
+// plate. Used to lay the keyline as one dilated shape, because outlining the
+// top and the walls separately leaves tabs sticking out at the four tips.
+int cap_body(int dy, int wall)
 {
-    if (dy <= 0) return cap_half(dy, half_w, half_h);
-    if (dy <= wall) return cap_half(0, half_w, half_h);
-    return cap_half(dy - wall, half_w, half_h);
+    int best = 0;
+    const int span = std::max(1, wall);
+    for (int s = 0; s <= wall; ++s) {
+        const int half = cap_half(dy - s, kCapW + kCapFlare * s / span,
+                                  kCapH + (kCapFlare / 2) * s / span);
+        if (half > best) best = half;
+    }
+    return best;
 }
 
-// The `\` keycap. A cube read as a sticker, so this is built as a cap: rounded
-// corners, a dished top inset, a heavy keyline, and three faces that differ.
+// The `\` keycap.
 void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
 {
-    constexpr int kHalfW = 28;
-    constexpr int kHalfH = 15;
-    constexpr int kWall  = 16;
-
     const float down = motion::clamp01(press);
-    const int wall = kWall - static_cast<int>(down * 7.f);
+    const int wall = kCapWall - static_cast<int>(down * 8.f);
     const int top  = cy - static_cast<int>(down * 2.f);
 
     const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
@@ -869,55 +876,55 @@ void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
 
     // Contact shadow, tightening as the cap goes down. Most of what sells the
     // travel is the shadow, not the two pixels the cap actually moves.
-    fill_ellipse(cx, top + kHalfH + wall + 4 - static_cast<int>(down * 2.f),
-                 kHalfW - 5 + static_cast<int>(down * 3.f), 3, shade);
+    fill_ellipse(cx, top + kCapH + wall + 5 - static_cast<int>(down * 2.f),
+                 kCapW - 4 + static_cast<int>(down * 3.f), 3, shade);
 
-    // Keyline: the whole silhouette, dilated, with the faces sunk into it.
-    for (int dy = -kHalfH - kOutline; dy <= kHalfH + wall + kOutline; ++dy) {
+    const int first = -kCapH - kOutline;
+    const int last  = kCapH + kCapFlare + wall + kOutline;
+
+    // Keyline: the silhouette, dilated, with the faces sunk into it.
+    for (int dy = first; dy <= last; ++dy) {
         int half = 0;
         for (int d = -kOutline; d <= kOutline; ++d) {
-            const int body = cap_silhouette(dy + d, kHalfW, kHalfH, wall);
-            if (body > 0)
-                half = std::max(half, body + kOutline - std::abs(d));
+            const int body = cap_body(dy + d, wall);
+            if (body > 0) half = std::max(half, body + kOutline - std::abs(d));
         }
+        if (half > 0) hline(cx - half, top + dy, half * 2 + 1, key);
+    }
+    // Walls, sloping outwards as they go down.
+    for (int dy = first; dy <= last; ++dy) {
+        const int half = cap_body(dy, wall);
         if (half <= 0) continue;
-        hline(cx - half, top + dy, half * 2 + 1, key);
+        hline(cx - half, top + dy, half, left);
+        hline(cx, top + dy, half + 1, right);
+    }
+    // Top face, over them.
+    for (int dy = -kCapH; dy <= kCapH; ++dy) {
+        const int half = cap_half(dy, kCapW, kCapH);
+        if (half > 0) hline(cx - half, top + dy, half * 2 + 1, face);
     }
 
-    // Walls, then the top face.
-    for (int dx = -kHalfW; dx <= kHalfW; ++dx) {
-        const int y = top + cap_half(dx, kHalfH, kHalfW);
-        vline(cx + dx, y, wall + 1, dx < 0 ? left : right);
+    // The dish: a real recess, a shade back from the face with its far edge
+    // catching the light. A one-pixel inset outline could not be seen at all.
+    for (int dy = -kCapH + 4; dy <= kCapH - 4; ++dy) {
+        const int half = cap_half(dy, kCapW - 7, kCapH - 4);
+        if (half > 0) hline(cx - half, top + dy, half * 2 + 1, well);
     }
-    for (int dy = -kHalfH; dy <= kHalfH; ++dy) {
-        const int half = cap_half(dy, kHalfW, kHalfH);
-        if (half <= 0) continue;
-        hline(cx - half, top + dy, half * 2 + 1, face);
-    }
-    // The dish. A one-pixel inset outline was invisible, so it is cut as an
-    // actual recess: the well is a shade back from the face and its far edge
-    // catches the light, which is the whole reason a moulded cap looks moulded.
-    for (int dy = -kHalfH + 5; dy <= kHalfH - 5; ++dy) {
-        const int half = cap_half(dy, kHalfW - 8, kHalfH - 5);
-        if (half <= 0) continue;
-        hline(cx - half, top + dy, half * 2 + 1, well);
-    }
-    for (int dy = -kHalfH + 5; dy <= 0; ++dy) {
-        const int half = cap_half(dy, kHalfW - 8, kHalfH - 5);
-        if (half <= 0) continue;
-        hline(cx - half, top + dy, half * 2 + 1, dish);
-        break;
-    }
-    for (int dx = -kHalfW + 8; dx <= kHalfW - 8; ++dx) {
-        const int rise = cap_half(dx, kHalfH - 5, kHalfW - 8);
-        fill_rect(cx + dx, top - rise, 1, 1, dish);
+    for (int dx = -kCapW + 7; dx <= kCapW - 7; ++dx) {
+        const int rise = cap_half(dx, kCapH - 4, kCapW - 7);
+        if (rise > 0) fill_rect(cx + dx, top - rise, 1, 1, dish);
     }
 
-    // The legend lies in the plane of the cap: it runs down the isometric axis
-    // at one pixel of fall per two of run, so it reads as printed on the face.
-    for (int dx = -11; dx <= 11; ++dx) {
-        const int y = top - 6 + (dx + 11) / 2;
-        fill_rect(cx + dx, y, 1, 2, mark);
+    // The legend. It is set in the plane of the cap, which means it is sheared
+    // by the projection: the glyph's own vertical runs down one isometric axis
+    // and its own horizontal down the other. Laying it along a single axis --
+    // which is what the first attempt did -- draws the projection of a
+    // horizontal rule, and that is why it read as a slot rather than a letter.
+    // Backslash falls from the far corner to the near one, so on screen it is a
+    // steep stroke down and to the right.
+    for (int t = -7; t <= 7; ++t) {
+        const int run = t >= 0 ? t / 2 : -((-t + 1) / 2);   // exactly two rows
+        fill_rect(cx + run, top + t, 2, 1, mark);           // per step, no kink
     }
 }
 

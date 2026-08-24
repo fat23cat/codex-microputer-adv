@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.4 — 2026-08-22
+
+- Fixed the legend. It was the projection of a horizontal rule laid along one
+  isometric axis, which is why it read as a slot milled into the cap rather
+  than a letter. A glyph printed on the top face is sheared by the projection:
+  its own vertical runs down one axis and its own horizontal down the other,
+  and backslash falls from the far corner to the near one -- on screen, a steep
+  stroke down and to the right, two rows per step so the diagonal is clean.
+- The cap is tapered. It is wider at the plate than at the top, which is most
+  of what tells the eye it is a key and not a box; the silhouette is built as
+  the top outline swept down and outwards, and the keyline is dilated from that
+  one shape so its weight stays even all the way round.
+
 ## 0.8.3 — 2026-08-22
 
 - The keycap's rounding is visible because it is no longer a superellipse. A
