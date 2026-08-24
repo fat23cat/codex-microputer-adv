@@ -94,6 +94,7 @@ motion::Spring composer_key_press;
 // It waits out the keycap travel first: closing on the same frame as the press
 // threw the object away before the user saw it move.
 float composer_confirm_age = -1.f;
+float composer_key_hold = -1.f;   // the cap stays down long enough to be seen
 constexpr float kDetentRadians = 0.5236f;   // 30 degrees: twelve flutes, one per detent
 float marquee_hold = 0.f;
 int   marquee_dir  = 1;
@@ -2032,6 +2033,7 @@ void set_composer_control_active(bool active)
     composer_control_step_age = 99.f;
     composer_control_step_dir = 0;
     composer_confirm_age = -1.f;
+    composer_key_hold = -1.f;
     if (active) {
         composer_knob_angle.snap(0.f);
         composer_key_press.snap(0.f);
@@ -2088,8 +2090,10 @@ void notify_composer_control_step(int direction)
 void notify_composer_control_select()
 {
     if (!composer_control_target) return;
+    // Down on the press, held for a moment, then sprung back. Springing back
+    // from the same frame it went down in is a flinch, not a keystroke.
     composer_key_press.snap(1.f);
-    composer_key_press.to(0.f);
+    composer_key_hold = 0.f;
     composer_control_idle = 0.f;
     composer_confirm_age = 0.f;
     invalidate();
@@ -2110,7 +2114,7 @@ void note_composer_control_lamps(const uint32_t* rgb, const float* level)
     }
     composer_lamp_valid = true;
     composer_lamp_age = 0.f;
-    composer_confirm_age = -1.f;
+    if (composer_confirm_age >= 0.f) composer_confirm_age = 0.f;
     if (lit >= 0) {
         composer_lamp_lit = lit;
         composer_lamp_marker.to(static_cast<float>(lit));
@@ -2132,7 +2136,10 @@ void note_composer_control_preview()
         // off the pending exit: a click on Micro can just as easily step into a
         // submenu or cycle a value, and the device cannot tell which from the
         // click alone. It can tell from this.
-        composer_confirm_age = -1.f;
+        if (composer_confirm_age >= 0.f) {
+            std::printf("CCP_UI|composer|confirm_hold|host_lit\n");
+            composer_confirm_age = 0.f;   // the host answered; start waiting again
+        }
         composer_control_idle = 0.f;
         dirty = true;
         return;
@@ -2328,14 +2335,28 @@ void service()
         }
         // Mouse/keyboard confirmation on the Mac does not send an encoder
         // release back to the device. Never leave the overlay stuck forever.
-        // After a click the page waits, both for the keycap to finish travelling
-        // and for the host to say whether its surface survived. A lamp frame in
-        // that window cancels the exit; silence means the picker closed and the
-        // page follows it out.
+        if (composer_key_hold >= 0.f) {
+            composer_key_hold += dt;
+            animating = true;
+            if (composer_key_hold >= 0.09f) {
+                composer_key_press.to(0.f);
+                composer_key_hold = -1.f;
+            }
+        }
+        // After a click the page waits for the host to say whether its surface
+        // survived, and any frame from it resets the wait. A fixed 0.45 s was
+        // too short to be that answer: a click has to cross the radio, be drawn
+        // by the host and come back, and the all-off frame the host sends while
+        // it rebuilds its lights never even reached the cancel. So the test is
+        // now silence, not elapsed time -- the page leaves when the host has
+        // stopped talking for a beat, and stays for as long as it keeps lit.
         if (composer_confirm_age >= 0.f) {
             composer_confirm_age += dt;
             animating = true;
-            if (composer_confirm_age >= 0.45f) dismiss_composer_control_preview();
+            if (composer_confirm_age >= 1.2f) {
+                std::printf("CCP_UI|composer|confirm_exit|host_silent\n");
+                dismiss_composer_control_preview();
+            }
         }
         if (composer_control_idle >= 8.f) set_composer_control_active(false);
         else animating = true;

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.7 — 2026-08-22
+
+- The wait after a click is now a test of silence, not a stopwatch. The fixed
+  0.45 s could not be the host's answer: a click has to cross the radio, be
+  drawn by the host and come back, and the all-off frame the host sends while
+  it rebuilds its lights never reached the cancel at all. The page now leaves
+  only after the host has said nothing for 1.2 s, and every frame restarts
+  that count -- so it stays for as long as the host keeps its lamps lit. Both
+  outcomes are logged, so which one happened is visible over the wire.
+- The keycap is held down for 90 ms before it springs back. Releasing on the
+  same frame it went down was a flinch, not a keystroke.
+
 ## 0.8.6 — 2026-08-22
 
 - The page no longer leaves while the host is still lit. A click on Micro's
