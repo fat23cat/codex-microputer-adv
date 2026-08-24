@@ -65,7 +65,7 @@ require("main/ui.cpp",
         r"if \(!composer_control_target\) \{[\s\S]{0,220}set_composer_control_active\(true\)",
         "turning the dial must open the control surface, not only pressing it")
 require("main/ui.cpp",
-        r"const int travel = static_cast<int>\(down \* 5\.f\);[\s\S]{0,120}"
+        r"const int travel = static_cast<int>\(down \* \(spec\.wall / 3\)\);[\s\S]{0,140}"
         r"const int top  = cy \+ travel;",
         "the keycap must travel down into a plate that stays put")
 require("main/ui.cpp",
@@ -75,8 +75,17 @@ require("main/ui.cpp",
         r"void draw_knob\(int cx, int cy, float angle",
         "the dial must be drawn as the cylinder it physically is")
 require("main/ui.cpp",
-        r"void draw_keycap\(int cx, int cy, float press",
+        r"void draw_keycap\(int cx, int cy, const CapSpec& spec, CapGlyph glyph,",
         "the select key must be drawn as an isometric keycap")
+require("main/ui.cpp",
+        r"CapGlyph::BracketOpen : CapGlyph::BracketClose",
+        "the two detent directions must be keys carrying the brackets the host receives")
+require("main/ui.cpp",
+        r"const int dw = spec\.w - spec\.w / 3;[\s\S]{0,420}hline\(cx - half, top \+ dy - 1, half \* 2 \+ 1, dish\);",
+        "the cap must carry a dish as a filled tone, not another parallel edge")
+forbid("main/ui.cpp",
+       r"fill_rect\(cx \+ static_cast<int>\(kKnobRx \* 0\.60f",
+       "the dial must not claim to know its absolute position")
 require("main/ui.cpp",
         r"void note_composer_control_lamps\(const uint32_t\* rgb, const float\* level\)"
         r"[\s\S]{0,700}composer_lamp_marker\.to\(static_cast<float>\(lit\)\)",

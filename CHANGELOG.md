@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.3 — 2026-08-24
+
+- Replaced the chevrons flanking the dial with two small keycaps carrying `[`
+  and `]`, drawn in the same profile as the select cap and pressing down on the
+  detent that matches them. A chevron says "there is more this way", which is a
+  scroll hint; the brackets say what the host actually receives.
+- Brought the dish back on the cap top, as a filled tone with a lit far rim
+  rather than an outline. As a stroke it was one more edge parallel to the
+  keyline -- the pleating that made the cap a concertina -- and as a large area
+  it turned the cap into a tray.
+- Took the position index off the dial, both the notch through the wall and the
+  bar on the cap. The knurling already carries the angle; two more marks only
+  competed to be read as a value this page never knows.
+- Cut the legends into the plastic: the stroke in ink with a lit pixel trailing
+  it down and to the right. The backslash's fall was being read against the
+  cap's own left edge, which runs the other way.
+
 ## 0.9.2 — 2026-08-22
 
 - Took the pyramid out of the keycap. The taper was doing the work of a roof:

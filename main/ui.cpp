@@ -796,14 +796,11 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
         vline(x, y, kKnobWall - static_cast<int>((1.f - sa) * 4.f), knur);
     }
 
-    // The index. A notch cut through the wall plus a bar on the cap: together
-    // they give absolute angle, not just evidence that something moved.
-    const float sa = std::sin(angle);
-    const int ix = cx + static_cast<int>(kKnobRx * std::cos(angle));
-    const int iy = cy + static_cast<int>(kKnobRy * sa);
-    if (sa > 0.f) fill_rect(ix - 1, iy, 3, kKnobWall, mark);
-    fill_rect(cx + static_cast<int>(kKnobRx * 0.60f * std::cos(angle)) - 1,
-              cy + static_cast<int>(kKnobRy * 0.60f * sa) - 1, 3, 3, mark);
+    // No index mark. The knurling already carries the angle -- it walks two
+    // flutes per detent -- and a notch through the wall plus a bar on the cap
+    // only added two marks competing to be read as the value, which is a thing
+    // this page deliberately never claims to know.
+    (void)mark;
 }
 
 // Half-width of the keycap outline at row `dy`. The edges of a cap in this
@@ -820,43 +817,73 @@ int cap_half(int dy, int half_w, int half_h)
     return std::min(d, half_w - 1);                     // left and right tips
 }
 
-constexpr int kCapW     = 24;
-constexpr int kCapH     = 12;
-constexpr int kCapWall  = 15;
-constexpr int kCapFlare = 4;   // a keycap is wider at the plate than at the top,
-                               // and that taper is most of what tells the eye it
-                               // is a key and not a box
+// A cap is described by the half-extents of its top face, the height of its
+// wall and how much wider it gets on the way down to the plate. Two sizes are
+// in use: the one the encoder press lands on, and the small pair standing for
+// the two detent directions.
+struct CapSpec {
+    int w, h, wall, flare;
+};
+constexpr CapSpec kCapSelect{24, 12, 15, 4};   // a keycap is wider at the plate
+constexpr CapSpec kCapStep  {14,  7,  9, 3};   // than at the top, and that taper
+                                               // is most of what tells the eye it
+                                               // is a key and not a box
+
+enum class CapGlyph : uint8_t { Backslash, BracketOpen, BracketClose };
 
 // Silhouette of the whole tapered cap at row `dy`, measured from the centre of
 // the top face: the union of the top outline swept down and outwards to the
 // plate. Used to lay the keyline as one dilated shape, because outlining the
 // top and the walls separately leaves tabs sticking out at the four tips.
-int cap_body(int dy, int wall)
+int cap_body(int dy, const CapSpec& spec, int wall)
 {
     // Only below the top face does the flare count. Unioning it over the whole
     // silhouette let the base's far corners peek out past the top and gave the
     // cap a hexagonal brim; on a real key the top overhangs and hides them.
-    if (dy <= 0) return cap_half(dy, kCapW, kCapH);
+    if (dy <= 0) return cap_half(dy, spec.w, spec.h);
     int best = 0;
     const int span = std::max(1, wall);
     for (int s = 0; s <= wall; ++s) {
-        const int half = cap_half(dy - s, kCapW + kCapFlare * s / span,
-                                  kCapH + (kCapFlare / 2) * s / span);
+        const int half = cap_half(dy - s, spec.w + spec.flare * s / span,
+                                  spec.h + (spec.flare / 2) * s / span);
         if (half > best) best = half;
     }
     return best;
 }
 
-// The `\` keycap.
-void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
+// A legend is set in the plane of the cap, so the projection shears it: the
+// glyph's own vertical runs down one isometric axis and its horizontal down the
+// other. Glyph x maps to (-2, 1) and glyph y to (2, 1), which is the choice
+// that puts a backslash's fall down and to the right on screen. Laying a glyph
+// along a single axis instead draws the projection of a horizontal rule, which
+// is why the first attempt read as a milled slot.
+void cap_glyph_line(int cx, int cy, float gx0, float gy0, float gx1, float gy1,
+                    float scale, uint16_t c)
+{
+    const float sx0 = (-2.f * gx0 + 2.f * gy0) * scale;
+    const float sy0 = (gx0 + gy0) * scale;
+    const float sx1 = (-2.f * gx1 + 2.f * gy1) * scale;
+    const float sy1 = (gx1 + gy1) * scale;
+    const int steps = static_cast<int>(std::max(std::fabs(sx1 - sx0),
+                                                std::fabs(sy1 - sy0))) + 1;
+    for (int i = 0; i <= steps; ++i) {
+        const float t = static_cast<float>(i) / steps;
+        fill_rect(cx + static_cast<int>(std::lround(sx0 + (sx1 - sx0) * t)),
+                  cy + static_cast<int>(std::lround(sy0 + (sy1 - sy0) * t)),
+                  1, 1, c);
+    }
+}
+
+void draw_keycap(int cx, int cy, const CapSpec& spec, CapGlyph glyph,
+                 float press, uint16_t base, float copy)
 {
     const float down = motion::clamp01(press);
     // The plate does not move: the cap travels down into it. So the top face
     // goes down by the travel and the wall loses exactly that much, which keeps
     // the base where it was. Moving the top up instead -- which is what this
     // did -- made the cap flinch upwards and tuck itself in.
-    const int travel = static_cast<int>(down * 5.f);
-    const int wall = kCapWall - travel;
+    const int travel = static_cast<int>(down * (spec.wall / 3));
+    const int wall = spec.wall - travel;
     const int top  = cy + travel;
 
     const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
@@ -864,59 +891,93 @@ void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
     const uint16_t left  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.14f));
     const uint16_t right = mix(base, kPaper, static_cast<uint8_t>(ink * 0.38f));
     const uint16_t face  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.66f));
+    const uint16_t dish  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.56f));
+    const uint16_t lip   = mix(base, kPaper, static_cast<uint8_t>(ink * 0.82f));
     const uint16_t brk   = mix(base, kPaper, static_cast<uint8_t>(ink * 0.48f));
     const uint16_t key   = mix(base, kPaper, ink);
     const uint16_t mark  = mix(face, kInk,  static_cast<uint8_t>(copy * 190.f));
+    const uint16_t cut   = mix(face, kPaper, static_cast<uint8_t>(copy * 120.f));
 
     // Contact shadow, tightening as the cap goes down. Most of what sells the
     // travel is the shadow, not the two pixels the cap actually moves.
-    fill_ellipse(cx, top + kCapH + wall + 3,
-                 kCapW + kCapFlare - 3 + static_cast<int>(down * 3.f), 3, shade);
+    fill_ellipse(cx, top + spec.h + wall + 3,
+                 spec.w + spec.flare - 3 + static_cast<int>(down * 3.f), 3, shade);
 
-    const int first = -kCapH - kOutline;
-    const int last  = kCapH + kCapFlare + wall + kOutline;
+    const int first = -spec.h - kOutline;
+    const int last  = spec.h + spec.flare + wall + kOutline;
 
     // Keyline: the silhouette, dilated, with the faces sunk into it.
     for (int dy = first; dy <= last; ++dy) {
         int half = 0;
         for (int d = -kOutline; d <= kOutline; ++d) {
-            const int body = cap_body(dy + d, wall);
+            const int body = cap_body(dy + d, spec, wall);
             if (body > 0) half = std::max(half, body + kOutline - std::abs(d));
         }
         if (half > 0) hline(cx - half, top + dy, half * 2 + 1, key);
     }
     // Walls, sloping outwards as they go down.
     for (int dy = first; dy <= last; ++dy) {
-        const int half = cap_body(dy, wall);
+        const int half = cap_body(dy, spec, wall);
         if (half <= 0) continue;
         hline(cx - half, top + dy, half, left);
         hline(cx, top + dy, half + 1, right);
     }
-    // The top face is one flat tone, and the only line on it is where it meets
-    // the walls. It had a filled dish before, and then an inset moulding line
-    // under the far edges; stacked inside the keyline those read as pleats --
-    // the cap looked like a concertina. One plane break is enough.
-    for (int dy = -kCapH; dy <= kCapH; ++dy) {
-        const int half = cap_half(dy, kCapW, kCapH);
+    // Top face, then the plane break where it meets the walls. Only one line
+    // sits inside the keyline: an inset moulding line under it as well read as
+    // pleats and the cap looked like a concertina.
+    for (int dy = -spec.h; dy <= spec.h; ++dy) {
+        const int half = cap_half(dy, spec.w, spec.h);
         if (half > 0) hline(cx - half, top + dy, half * 2 + 1, face);
     }
-    for (int dy = 0; dy <= kCapH; ++dy) {
-        const int half = cap_half(dy, kCapW, kCapH);
+    for (int dy = 0; dy <= spec.h; ++dy) {
+        const int half = cap_half(dy, spec.w, spec.h);
         if (half <= 0) continue;
         hline(cx - half, top + dy, 2, brk);
         hline(cx + half - 1, top + dy, 2, brk);
     }
+    // The dish. Not a line -- a filled area a shade darker than the face with a
+    // lit rim along its far edges, which is how a shallow scoop reads: the far
+    // wall catches the light and the floor loses it. As an outline it was just
+    // another edge parallel to the keyline, and as a large area it turned the
+    // cap into a tray, so it is small and it is a tone, not a stroke.
+    const int dw = spec.w - spec.w / 3;
+    const int dh = spec.h - spec.h / 3;
+    for (int dy = -dh; spec.w >= 20 && dy <= dh; ++dy) {
+        const int half = cap_half(dy, dw, dh);
+        if (half <= 0) continue;
+        hline(cx - half, top + dy - 1, half * 2 + 1, dish);
+        if (dy <= 0) {
+            hline(cx - half, top + dy - 2, 2, lip);
+            hline(cx + half - 1, top + dy - 2, 2, lip);
+        }
+    }
 
-    // The legend is set in the plane of the cap, so the projection shears it:
-    // the glyph's own vertical runs down one isometric axis and its horizontal
-    // down the other. Backslash falls from the far corner to the near one --
-    // on screen, a steep stroke down and to the right, one pixel wide, two rows
-    // per step. Laying it along a single axis instead, as the first attempt
-    // did, draws the projection of a horizontal rule, which is why it read as a
-    // slot; drawing it two pixels wide in near-black then made it a crowbar.
-    for (int t = -6; t <= 6; ++t) {
-        const int run = t >= 0 ? t / 2 : -((-t + 1) / 2);
-        fill_rect(cx + run, top + t, 1, 1, mark);
+    // The legend, incised: the stroke in dark ink with a light pixel following
+    // it down and to the right, so it reads as cut into the plastic rather than
+    // printed on it -- and so its direction is unambiguous, which matters most
+    // for the backslash, whose fall is otherwise easy to confuse with the
+    // cap's own left edge running the other way.
+    const float gs = spec.w >= 20 ? 3.0f : 1.7f;
+    switch (glyph) {
+    case CapGlyph::Backslash:
+        cap_glyph_line(cx, top, -0.8f, -1.15f, 0.8f, 1.15f, gs, mark);
+        cap_glyph_line(cx + 1, top + 1, -0.8f, -1.15f, 0.8f, 1.15f, gs, cut);
+        break;
+    // The brackets are set upright, not sheared. A diagonal survives the
+    // projection -- that is why the backslash reads -- but a bracket is a long
+    // vertical with two short arms, and the shear lays the vertical almost flat
+    // and stands the arms up. Sheared, the pair came out as two broken rings.
+    // A printed legend faces the reader on real caps anyway.
+    case CapGlyph::BracketOpen:
+        vline(cx - 1, top - 2, 7, mark);
+        hline(cx - 1, top - 2, 3, mark);
+        hline(cx - 1, top + 4, 3, mark);
+        break;
+    case CapGlyph::BracketClose:
+        vline(cx + 1, top - 2, 7, mark);
+        hline(cx - 1, top - 2, 3, mark);
+        hline(cx - 1, top + 4, 3, mark);
+        break;
     }
 }
 
@@ -975,21 +1036,20 @@ void draw_composer_control_takeover()
         ? composer_lamp_level[lit_lamp].x : 0.f;
     draw_knob(76 + lean, 44, composer_knob_angle.x, base, glow, glow_level, copy);
 
+    // The two detent directions are keys as well, drawn in the same profile as
+    // the select cap and pressing down on the detent that matches them. They
+    // were chevrons, which said "there is more this way" -- a scroll hint, not
+    // a control. `[` and `]` say what the host actually receives.
     for (int side = 0; side < 2; ++side) {
         const int dir = side == 0 ? -1 : 1;
-        const bool hot = composer_control_step_dir == dir && step > 0.f;
-        const uint16_t c = hot
-            ? mix(base, kPaper, static_cast<uint8_t>(
-                  copy * std::min(255.f, 70.f + step * 185.f)))
-            : faint;
-        const int ax = side == 0 ? 33 : 119;
-        for (int k = 0; k < 6; ++k)
-            vline(ax + dir * k, 58 - 5 + k / 2, 11 - k, c);
+        const float hot = composer_control_step_dir == dir ? step : 0.f;
+        draw_keycap(side == 0 ? 22 : 130, 48, kCapStep,
+                    side == 0 ? CapGlyph::BracketOpen : CapGlyph::BracketClose,
+                    hot, base, copy);
     }
 
-    // Seated lower than the knob on purpose. The cap is the wider, heavier
-    // shape of the two; set on the same line it reads as riding high.
-    draw_keycap(186, 54, composer_key_press.x, base, copy);
+    draw_keycap(186, 54, kCapSelect, CapGlyph::Backslash,
+                composer_key_press.x, base, copy);
 
     draw_tracked_transparent("TURN", 76 - tracked_width("TURN", 2) / 2, 96, 2, text);
     draw_tracked_transparent("SELECT", 186 - tracked_width("SELECT", 2) / 2, 96, 2, text);
