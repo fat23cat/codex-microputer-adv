@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.2 — 2026-08-24
+
+- Fixed the stick's vertical throw, which ran backwards: screen y and the
+  direction table both count down as +1, and negating one of them made the cap
+  answer a Down key by hopping away from the chevron that lit.
+- Lengthened the vertical travel to match how far the horizontal throw reads.
+
 ## 0.10.1 — 2026-08-24
 
 - Brought the stick's chevrons in close. Set out at the screen edges they read

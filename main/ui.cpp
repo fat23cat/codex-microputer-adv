@@ -854,7 +854,7 @@ void draw_stick(int cx, int cy, float lx, float ly, uint16_t base, float copy)
     // Its base rides on the plate, so the cap stands proud of the recess
     // rather than down inside it -- a rubber nub you can get a thumb on.
     const int px = cx + static_cast<int>(lx * 16.f);
-    const int py = cy + 1 - kCapWall + static_cast<int>(ly * 7.f);
+    const int py = cy + 1 - kCapWall + static_cast<int>(ly * 8.f);
 
     for (int t = kCapWall; t >= 0; --t)
         fill_ellipse(px, py + t, kCapRx + kOutline, kCapRy + kOutline, line);
@@ -1904,10 +1904,10 @@ const uint16_t* capture_frame(const char* scene)
         current = Screen::Deck;
         stick_control_amount.snap(1.f);
         stick_control_target = true;
-        stick_step_dir = 0;
+        stick_step_dir = 1;
         stick_step_age = 0.08f;
-        stick_lean_x.snap(0.8f);
-        stick_lean_y.snap(0.f);
+        stick_lean_x.snap(0.f);
+        stick_lean_y.snap(0.9f);
         draw_deck();
         draw_stick_control_takeover();
         stick_control_target = false;
@@ -2155,8 +2155,11 @@ void notify_stick_step(int direction)
     // Push the stick over, then let it fall back to centre on its own spring.
     // The impulse the host receives is instantaneous; the object is not.
     static const int8_t dirs[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+    // Screen y runs the same way the direction table does: down is +1 in
+    // both. Negating it here sent every vertical throw the wrong way, so the
+    // cap answered a Down key by hopping away from the chevron that lit.
     stick_lean_x.snap(dirs[direction][0] * 1.15f);
-    stick_lean_y.snap(dirs[direction][1] * -1.15f);
+    stick_lean_y.snap(dirs[direction][1] * 1.15f);
     stick_lean_x.to(0.f);
     stick_lean_y.to(0.f);
     invalidate();
