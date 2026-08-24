@@ -93,6 +93,20 @@ float composer_lamp_age = 99.f;
 // jumps -- the same reason every marker on the device is a spring.
 motion::Spring composer_knob_angle;
 constexpr float kDetentRadians = 0.5236f;   // 30 degrees: twelve flutes, one per detent
+// ------------------------------------------------------------ the stick page
+// Same instrument page as the dial, for the four arrow keys. It fixes on
+// nothing -- an impulse is sent and forgotten, the host reports no state back
+// -- so unlike the dial page it always closes itself three seconds after the
+// last press. There is no confirm and nothing to engage.
+motion::Spring stick_control_amount;
+bool  stick_control_target = false;
+float stick_control_idle = 99.f;
+float stick_step_age = 99.f;
+int   stick_step_dir = -1;          // 0 right, 1 down, 2 left, 3 up
+motion::Spring stick_lean_x;
+motion::Spring stick_lean_y;
+constexpr float kStickIdleClose = 3.f;
+
 float marquee_hold = 0.f;
 int   marquee_dir  = 1;
 
@@ -126,6 +140,9 @@ motion::Spring settings_marker;
 motion::Spring settings_level;   // volume meter position, in segments
 int debug_settings_row = 0;
 constexpr int kDebugSettingsRows = static_cast<int>(DebugSettingsRow::Count);
+constexpr int kPreviewsRows = static_cast<int>(PreviewsRow::Count);
+int previews_row = 0;
+motion::Spring previews_marker;
 constexpr int kDebugSettingsPitch = 15;
 constexpr int kDebugSettingsRowH  = 14;
 motion::Spring debug_settings_marker;
@@ -804,6 +821,119 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
     (void)mark;
 }
 
+// ------------------------------------------------------------- the stick
+// Micro's stick is planar: a low rubber cap that slides across a recess in the
+// plate, not a ball on a shaft that pivots. Drawn as a tilting lever it was a
+// different object entirely -- too tall, and moving the wrong way. It is drawn
+// in the dial's family -- same white keyline, same tone ladder -- because it is
+// the same kind of page about a different control, and two dialects of one
+// idea would just look like two unrelated screens.
+constexpr int kGateRx  = 34;   // the recess milled into the plate
+constexpr int kGateRy  = 15;
+constexpr int kCapRx   = 18;   // the rubber cap that slides inside it
+constexpr int kCapRy   = 8;
+constexpr int kCapWall = 7;
+
+void draw_stick(int cx, int cy, float lx, float ly, uint16_t base, float copy)
+{
+    const uint8_t ink = static_cast<uint8_t>(copy * 255.f);
+    const uint16_t line  = mix(base, kPaper, ink);
+    const uint16_t plate = mix(base, kPaper, static_cast<uint8_t>(ink * 0.26f));
+    const uint16_t well  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.10f));
+    const uint16_t wall  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.22f));
+    const uint16_t face  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.60f));
+    const uint16_t dish  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.50f));
+
+    // The recess. Keyline, plate lip, then the shadowed floor the cap rides on.
+    fill_ellipse(cx, cy + 2, kGateRx + kOutline, kGateRy + kOutline, line);
+    fill_ellipse(cx, cy + 2, kGateRx, kGateRy, plate);
+    fill_ellipse(cx, cy + 1, kGateRx - 4, kGateRy - 3, well);
+
+    // The cap slides; it does not lean. Screen x and y travel in the ratio of
+    // the ellipse, so the motion stays in the plane of the plate.
+    const int px = cx + static_cast<int>(lx * 12.f);
+    const int py = cy + static_cast<int>(ly * 5.f);
+
+    for (int t = kCapWall; t >= 0; --t)
+        fill_ellipse(px, py + t, kCapRx + kOutline, kCapRy + kOutline, line);
+    for (int t = kCapWall; t >= 1; --t)
+        fill_ellipse(px, py + t, kCapRx, kCapRy, wall);
+    fill_ellipse(px, py, kCapRx, kCapRy, face);
+    // Rubber, so the top is dished rather than flat, and the dish is a tone
+    // with a lit far rim -- the same way the keycap read as scooped.
+    fill_ellipse(px, py + 1, kCapRx - 5, kCapRy - 3, dish);
+    fill_ellipse(px, py - 1, kCapRx - 7, kCapRy - 4, mix(dish, kPaper,
+                 static_cast<uint8_t>(copy * 40.f)));
+}
+
+// A chevron pointing away from the instrument, on any of the four sides.
+void draw_chevron(int ax, int ay, int dx, int dy, uint16_t c)
+{
+    for (int k = 0; k < 6; ++k) {
+        if (dx != 0) vline(ax + dx * k, ay - 5 + k / 2, 11 - k, c);
+        else         hline(ax - 5 + k / 2, ay + dy * k, 11 - k, c);
+    }
+}
+
+void draw_stick_control_takeover()
+{
+    const float amount = motion::ease_in_out_cubic(
+        motion::clamp01(stick_control_amount.x));
+    if (amount <= 0.f) return;
+
+    const int slot = std::clamp(model::state.selected, 0, kCellCount - 1);
+    const model::Task* task = slot < model::state.task_count
+        ? &model::state.tasks[slot] : nullptr;
+    model::Task fallback;
+    fallback.present = true;
+    const uint16_t source = cell_fill(task ? *task : fallback);
+    const uint16_t base = mix(source, kBlue, static_cast<uint8_t>(amount * 255.f));
+    const int source_x = cell_x(slot);
+    const int source_w = cell_w(slot);
+    const int x0 = static_cast<int>(motion::lerp(source_x, 0.f, amount));
+    const int x1 = static_cast<int>(motion::lerp(source_x + source_w,
+                                                 static_cast<float>(kScreenW), amount));
+    fill_status_surface(x0, 0, x1 - x0, kScreenH, base, 255, 0, 30);
+
+    const float resting_w = micro5_digits::kVisualWidth[0][slot];
+    const float resting_h = micro5_digits::kVisualHeight[0][slot];
+    const float resting_visual_x = source_x + (source_w - resting_w) / 2.f;
+    const float resting_visual_y = kDigitSelectedBottom - resting_h;
+    draw_micro5_digit(slot,
+        motion::lerp(resting_visual_x - micro5_digits::kLeft[0][slot],
+                     10.f - micro5_digits::kLeft[0][slot], amount),
+        motion::lerp(resting_visual_y - micro5_digits::kTop[0][slot],
+                     7.f - micro5_digits::kTop[0][slot], amount),
+        1.f, kPaper);
+
+    const float copy = motion::ease_out_cubic((amount - 0.55f) / 0.45f);
+    if (copy <= 0.f) return;
+    const uint16_t text  = mix(base, kPaper, static_cast<uint8_t>(copy * 255.f));
+    const uint16_t faint = mix(base, kPaper, static_cast<uint8_t>(copy * 78.f));
+
+    const int cx = kScreenW / 2;
+    const int cy = 66;
+    draw_stick(cx, cy, stick_lean_x.x, stick_lean_y.x, base, copy);
+
+    const float step = motion::clamp01(1.f - stick_step_age / 0.34f);
+    static const int8_t dirs[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+    for (int d = 0; d < 4; ++d) {
+        const bool hot = stick_step_dir == d && step > 0.f;
+        const uint16_t c = hot
+            ? mix(base, kPaper, static_cast<uint8_t>(
+                  copy * std::min(255.f, 70.f + step * 185.f)))
+            : faint;
+        const int dx = dirs[d][0], dy = dirs[d][1];
+        draw_chevron(cx + dx * 66, cy + dy * 42, dx, dy, c);
+    }
+
+    draw_tracked_transparent("STICK", (kScreenW - tracked_width("STICK", 2)) / 2,
+                             118, 2, text);
+    draw_tracked_right("ESC", kScreenW - 10, 8, 1, faint, base);
+    // No confirm mark here. There is nothing to confirm: an arrow is an
+    // impulse the host consumes, and this page reports it, it does not hold it.
+}
+
 // ---------------------------------------------------- composer control preview
 // Codex Micro expresses composer controls through temporary light previews. The
 // page is the instrument, not a label for it: the dial and the key are drawn as
@@ -869,9 +999,7 @@ void draw_composer_control_takeover()
             ? mix(base, kPaper, static_cast<uint8_t>(
                   copy * std::min(255.f, 70.f + step * 185.f)))
             : faint;
-        const int ax = kScreenW / 2 + dir * 44;
-        for (int k = 0; k < 6; ++k)
-            vline(ax + dir * k, 58 - 5 + k / 2, 11 - k, c);
+        draw_chevron(kScreenW / 2 + dir * 44, 58, dir, 0, c);
     }
 
     draw_tracked_transparent("TURN", (kScreenW - tracked_width("TURN", 2)) / 2, 100, 2, text);
@@ -1215,9 +1343,7 @@ void draw_debug_settings()
     struct Row { const char* label; const char* value; };
     const Row rows[kDebugSettingsRows] = {
         {"USB HID", model::state.usb_hid_enabled ? "ON" : "OFF"},
-        {"PREVIEW SPLASH", "ENTER"},
-        {"PREVIEW PIN", "ENTER"},
-        {"PREVIEW CONTROL", "ENTER"},
+        {"SCREEN CHECKS", "ENTER"},
         {"CHIME LAB", audio::startup_chime_name(model::state.startup_chime)},
         {"STATUS DEBUG", "ENTER"},
     };
@@ -1240,6 +1366,35 @@ void draw_debug_settings()
                 rows[row].value,
                 kScreenW - kGutter - 7 - tracked_width(rows[row].value, 1), y,
                 1, value);
+        }
+    };
+    draw_selection_plate(kGutter, marker_y, kScreenW - 2 * kGutter,
+                         kDebugSettingsRowH, draw_rows);
+    draw_bottom_rail("` BACK", nullptr, nullptr, "UP DOWN ENTER");
+}
+
+void draw_previews()
+{
+    fill_rect(0, 0, kScreenW, kScreenH, kPaper);
+    draw_tracked("SCREEN CHECKS", kGutter, 7, 2, kInk, kPaper);
+    draw_tracked_right("` BACK", kScreenW - kGutter, 7, 1, kInkSoft, kPaper);
+    hline(kGutter, 22, kScreenW - 2 * kGutter, kRule);
+
+    const char* labels[kPreviewsRows] = {"SPLASH", "PAIRING PIN", "DIAL", "STICK"};
+    constexpr int top = 27;
+    const int marker_y = top + static_cast<int>(previews_marker.x + 0.5f);
+    auto draw_rows = [&](bool inverted) {
+        const uint16_t label = inverted ? kPaper : kInkSoft;
+        const uint16_t value = inverted ? kPaper : kDim;
+        const uint16_t ordinal = inverted ? kGrey : kOrdinal;
+        for (int row = 0; row < kPreviewsRows; ++row) {
+            const int y = top + row * kDebugSettingsPitch + 4;
+            char index[4];
+            std::snprintf(index, sizeof(index), "%02d", row + 1);
+            draw_tracked_transparent(index, kGutter + 6, y, 1, ordinal);
+            draw_tracked_transparent(labels[row], kGutter + 27, y, 1, label);
+            draw_tracked_transparent("ENTER",
+                kScreenW - kGutter - 7 - tracked_width("ENTER", 1), y, 1, value);
         }
     };
     draw_selection_plate(kGutter, marker_y, kScreenW - 2 * kGutter,
@@ -1487,6 +1642,7 @@ void draw_screen(Screen which)
         case Screen::Deck:     draw_deck();     break;
         case Screen::Settings: draw_settings(); break;
         case Screen::DebugSettings: draw_debug_settings(); break;
+        case Screen::Previews: draw_previews(); break;
         case Screen::StatusDebug: draw_status_debug(); break;
         case Screen::ChimeLab: draw_chime_lab(); break;
         case Screen::Help:     draw_help();     break;
@@ -1502,6 +1658,9 @@ void render()
             draw_boot();
         } else if (developer_preview == DeveloperPreview::Pairing) {
             draw_pairing_takeover();
+        } else if (developer_preview == DeveloperPreview::Stick) {
+            draw_deck();
+            draw_stick_control_takeover();
         } else {
             draw_deck();
             draw_composer_control_takeover();
@@ -1537,6 +1696,8 @@ void render()
             draw_voice_takeover();
         } else if (composer_control_amount.x > 0.f) {
             draw_composer_control_takeover();
+        } else if (stick_control_amount.x > 0.f) {
+            draw_stick_control_takeover();
         } else {
             draw_announcement();
             if (!announcing()) draw_toast();
@@ -1733,6 +1894,22 @@ const uint16_t* capture_frame(const char* scene)
         debug_settings_marker.snap(
             static_cast<float>(debug_settings_row * kDebugSettingsPitch));
         draw_debug_settings();
+    } else if (std::strcmp(scene, "previews") == 0) {
+        current = Screen::Previews;
+        previews_marker.snap(static_cast<float>(previews_row * kDebugSettingsPitch));
+        draw_previews();
+    } else if (std::strcmp(scene, "stick") == 0) {
+        current = Screen::Deck;
+        stick_control_amount.snap(1.f);
+        stick_control_target = true;
+        stick_step_dir = 0;
+        stick_step_age = 0.08f;
+        stick_lean_x.snap(0.8f);
+        stick_lean_y.snap(0.f);
+        draw_deck();
+        draw_stick_control_takeover();
+        stick_control_target = false;
+        stick_control_amount.snap(0.f);
     } else if (std::strcmp(scene, "signal") == 0) {
         // Both pieces of exceptional deck chrome at once, which is the only
         // arrangement where they can collide.
@@ -1818,6 +1995,8 @@ void go(Screen target)
     }
     if (target == Screen::DebugSettings)
         debug_settings_marker.snap(static_cast<float>(debug_settings_row * kDebugSettingsPitch));
+    if (target == Screen::Previews)
+        previews_marker.snap(static_cast<float>(previews_row * kDebugSettingsPitch));
     if (target == Screen::StatusDebug)
         debug_marker.snap(static_cast<float>(debug_row * kDebugPitch));
     if (target == Screen::ChimeLab) {
@@ -1955,6 +2134,41 @@ void note_composer_control_lamps(const uint32_t* rgb, const float* level)
         composer_lamp_marker.to(static_cast<float>(lit));
         composer_control_engaged = true;
     }
+    invalidate();
+}
+
+void notify_stick_step(int direction)
+{
+    if (direction < 0 || direction > 3) return;
+    if (!stick_control_target) {
+        stick_control_target = true;
+        stick_control_amount.to(1.f);
+        stick_lean_x.snap(0.f);
+        stick_lean_y.snap(0.f);
+        wake();
+    }
+    stick_step_dir = direction;
+    stick_step_age = 0.f;
+    stick_control_idle = 0.f;
+    // Push the stick over, then let it fall back to centre on its own spring.
+    // The impulse the host receives is instantaneous; the object is not.
+    static const int8_t dirs[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+    stick_lean_x.snap(static_cast<float>(dirs[direction][0]));
+    stick_lean_y.snap(static_cast<float>(-dirs[direction][1]));
+    stick_lean_x.to(0.f);
+    stick_lean_y.to(0.f);
+    invalidate();
+}
+
+bool stick_control_active() { return stick_control_target; }
+
+void dismiss_stick_control()
+{
+    if (!stick_control_target) return;
+    stick_control_target = false;
+    stick_control_amount.to(0.f);
+    stick_step_dir = -1;
+    stick_control_idle = 99.f;
     invalidate();
 }
 
@@ -2122,6 +2336,7 @@ void service()
     // One spring shape for every travelling plate on the local screens.
     if (!settings_marker.settled()) { settings_marker.step(dt, 24.f, 0.8f); animating = true; }
     if (!debug_settings_marker.settled()) { debug_settings_marker.step(dt, 24.f, 0.8f); animating = true; }
+    if (!previews_marker.settled()) { previews_marker.step(dt, 24.f, 0.8f); animating = true; }
     if (!debug_marker.settled()) { debug_marker.step(dt, 24.f, 0.8f); animating = true; }
     if (!chime_marker_x.settled()) { chime_marker_x.step(dt, 24.f, 0.8f); animating = true; }
     if (!chime_marker_y.settled()) { chime_marker_y.step(dt, 24.f, 0.8f); animating = true; }
@@ -2152,6 +2367,24 @@ void service()
     if (!composer_control_amount.settled()) {
         composer_control_amount.step(dt, 15.f, 0.92f);
         animating = true;
+    }
+    if (!stick_control_amount.settled()) {
+        stick_control_amount.step(dt, 15.f, 0.92f);
+        animating = true;
+    }
+    if (stick_control_target) {
+        stick_control_idle += dt;
+        stick_step_age += dt;
+        animating = true;
+        if (!stick_lean_x.settled()) stick_lean_x.step(dt, 22.f, 0.55f);
+        if (!stick_lean_y.settled()) stick_lean_y.step(dt, 22.f, 0.55f);
+        // Always. An arrow is an impulse: the host consumes it and reports
+        // nothing back, so there is no state here for the page to wait on and
+        // no reason for it to outlive the gesture.
+        if (stick_control_idle >= kStickIdleClose) {
+            std::printf("CCP_UI|stick|closed_idle\n");
+            dismiss_stick_control();
+        }
     }
     if (composer_control_target) {
         composer_control_idle += dt;
@@ -2340,6 +2573,18 @@ void debug_settings_move(int delta)
     dirty = true;
 }
 
+void previews_move(int delta)
+{
+    previews_row = (previews_row + delta + kPreviewsRows) % kPreviewsRows;
+    previews_marker.to(static_cast<float>(previews_row * kDebugSettingsPitch));
+    invalidate();
+}
+
+PreviewsRow previews_focus()
+{
+    return static_cast<PreviewsRow>(previews_row);
+}
+
 DebugSettingsRow debug_settings_focus()
 {
     return static_cast<DebugSettingsRow>(debug_settings_row);
@@ -2350,6 +2595,13 @@ void show_developer_preview(DeveloperPreview preview)
     developer_preview = preview;
     if (preview == DeveloperPreview::Splash) boot_ramp.restart(1.1f);
     if (preview == DeveloperPreview::Control) composer_control_amount.snap(1.f);
+    if (preview == DeveloperPreview::Stick) {
+        stick_control_amount.snap(1.f);
+        stick_step_dir = 0;
+        stick_step_age = 0.08f;
+        stick_lean_x.snap(0.8f);
+        stick_lean_y.snap(0.f);
+    }
     dirty = true;
 }
 

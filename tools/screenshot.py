@@ -13,7 +13,7 @@ import time
 import zlib
 
 SCENES = ("splash", "pairing", "deck", "recording", "composer", "settings",
-          "debug", "chime", "status", "signal")
+          "debug", "previews", "chime", "status", "signal", "stick")
 CAPTURE_CHOICES = ("live", *SCENES)
 
 

@@ -168,8 +168,22 @@ require("main/main.cpp",
         r"developer_preview_active\(\)[\s\S]{0,180}Key::Back[\s\S]{0,100}close_developer_preview\(\)[\s\S]{0,40}return;",
         "developer previews must capture all input and close only on Esc")
 require("main/main.cpp",
-        r"PreviewSplash[\s\S]{0,650}DeveloperPreview::Splash[\s\S]{0,300}DeveloperPreview::Pairing[\s\S]{0,300}DeveloperPreview::Control",
-        "developer settings must expose splash, PIN and control previews")
+        r"PreviewsRow::Splash[\s\S]{0,120}DeveloperPreview::Splash[\s\S]{0,200}"
+        r"DeveloperPreview::Pairing[\s\S]{0,200}DeveloperPreview::Control"
+        r"[\s\S]{0,200}DeveloperPreview::Stick",
+        "the screen checks list must reach every previewable path")
+require("main/main.cpp",
+        r"ui::go\(ui::Screen::Previews\);",
+        "screen checks must live on their own list, not among behaviour switches")
+require("main/ui.cpp",
+        r"if \(stick_control_idle >= kStickIdleClose\) \{[\s\S]{0,120}dismiss_stick_control\(\);",
+        "the stick page fixes on nothing and must always close itself")
+require("main/main.cpp",
+        r"if \(!ui::composer_control_active\(\)\) \{\s*ui::notify_stick_step",
+        "an arrow must not throw the dial page off the screen mid-selection")
+require("main/ui.cpp",
+        r"void draw_stick\(int cx, int cy, float lx, float ly",
+        "the stick must be drawn as the object it is, in the dial's family")
 require("main/audio.cpp",
         r"sound_volume\) \* 250u",
         "default 60 percent must preserve original hardware output 150")
@@ -482,8 +496,9 @@ require("main/ui.cpp",
 require("main/ui.cpp",
         r"chime_marker_x\.to\([\s\S]{0,140}chime_marker_y\.to\(",
         "the chime grid selection must travel on two springs")
-require("tools/screenshot.py", r'"debug", "chime", "status", "signal"',
-        "the chime, status and weak-link screens must be capturable scenes")
+require("tools/screenshot.py",
+        r'"debug", "previews", "chime", "status", "signal", "stick"',
+        "the chime, status, weak-link, screen-check and stick screens must be capturable")
 require("main/firmware.h", r"esp_app_get_description\(\)->version",
         "the running firmware version must have exactly one accessor")
 forbid("main/main.cpp", r"esp_app_get_description\(\)",

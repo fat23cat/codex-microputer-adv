@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.10.0 — 2026-08-24
+
+- The four arrow keys get the dial's page. Same flood, same family of drawing:
+  a chevron on each side lighting on the impulse, the instrument in the middle,
+  Esc top-right.
+- Micro's stick is planar -- a low rubber cap sliding across a recess in the
+  plate -- so that is what is drawn. The first pass was a ball on a shaft that
+  pivoted, which is a different object entirely.
+- The stick page always closes itself three seconds after the last press. An
+  arrow is an impulse: the host consumes it and reports nothing back, so there
+  is no state for the page to wait on. It never opens over the dial page, which
+  does have state to lose.
+- Screen checks moved to their own list under DEBUG. Each renders a real path
+  with fake data, which is not the same kind of thing as a switch that changes
+  how the device behaves. The stick page joins them.
+
 ## 0.9.7 — 2026-08-24
 
 - The confirm hint is the return arrow itself, not the word, and it sits in the

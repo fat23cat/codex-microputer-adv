@@ -570,6 +570,34 @@ void handle_press(const Press& press)
 
     // Modal UI owns physical arrow navigation before global hardware
     // assignments. Brackets remain exclusively encoder detents everywhere.
+    // Screen checks are their own list now. Every one of them renders a real
+    // path with fake data, which is exactly the sort of thing that should not
+    // share a menu with switches that change how the device behaves.
+    if (ui::screen() == ui::Screen::Previews) {
+        if (press.key == Key::Up || press.key == Key::Down) {
+            ui::previews_move(press.key == Key::Down ? 1 : -1);
+            audio::play(audio::Cue::Select);
+            return;
+        }
+        if (press.key == Key::Back) {
+            ui::go(ui::Screen::DebugSettings);
+            audio::play(audio::Cue::Select);
+            return;
+        }
+        if (press.key == Key::Enter) {
+            switch (ui::previews_focus()) {
+            case ui::PreviewsRow::Splash:
+                ui::show_developer_preview(ui::DeveloperPreview::Splash); break;
+            case ui::PreviewsRow::Pairing:
+                ui::show_developer_preview(ui::DeveloperPreview::Pairing); break;
+            case ui::PreviewsRow::Control:
+                ui::show_developer_preview(ui::DeveloperPreview::Control); break;
+            default:
+                ui::show_developer_preview(ui::DeveloperPreview::Stick); break;
+            }
+        }
+        return;
+    }
     if (ui::screen() == ui::Screen::DebugSettings) {
         if (press.key == Key::Up) {
             ui::debug_settings_move(-1);
@@ -616,12 +644,8 @@ void handle_press(const Press& press)
                 ui::invalidate();
                 return;
             }
-            if (row == ui::DebugSettingsRow::PreviewSplash) {
-                ui::show_developer_preview(ui::DeveloperPreview::Splash);
-            } else if (row == ui::DebugSettingsRow::PreviewPairing) {
-                ui::show_developer_preview(ui::DeveloperPreview::Pairing);
-            } else if (row == ui::DebugSettingsRow::PreviewControl) {
-                ui::show_developer_preview(ui::DeveloperPreview::Control);
+            if (row == ui::DebugSettingsRow::Previews) {
+                ui::go(ui::Screen::Previews);
             } else {
                 ui::go(row == ui::DebugSettingsRow::ChimeLab ? ui::Screen::ChimeLab
                                                              : ui::Screen::StatusDebug);
@@ -703,6 +727,12 @@ void handle_press(const Press& press)
         // on the host control page too. Micro's HID vocabulary has no escape,
         // so this is deliberately local: the page leaves and quarantines itself
         // against an immediate reopen, and nothing is claimed to the host.
+        if (ui::stick_control_active()) {
+            ui::dismiss_stick_control();
+            std::printf("CCP_UI|stick|escape\n");
+            audio::play(audio::Cue::Select);
+            break;
+        }
         if (ui::composer_control_active()) {
             // Micro has no escape key, so the way out of a control surface is
             // the one a hand would use on the hardware: press the agent key
@@ -777,6 +807,9 @@ void handle_press(const Press& press)
     case ui::Screen::DebugSettings:
         break;
 
+    case ui::Screen::Previews:
+        break;
+
     case ui::Screen::StatusDebug:
         if (press.key == Key::Up)
             ui::debug_move(-1);
@@ -811,6 +844,14 @@ void handle_press(const Press& press)
             press.key == Key::Left) {
             if (!send_joystick_impulse(press.key))
                 ui::toast("NO HOST", "stick not sent", theme::kOrange);
+            // Not while the dial owns the screen: that page is about a host
+            // surface the arrows have nothing to do with, and stacking a
+            // second instrument over it would take it down mid-selection.
+            if (!ui::composer_control_active()) {
+                ui::notify_stick_step(press.key == Key::Right ? 0
+                                    : press.key == Key::Down  ? 1
+                                    : press.key == Key::Left  ? 2 : 3);
+            }
         }
         if (press.key == Key::Digit) {
             const int slot = (press.digit == 0 ? 10 : press.digit) - 1;

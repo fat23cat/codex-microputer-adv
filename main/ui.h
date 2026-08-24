@@ -8,13 +8,16 @@
 
 namespace ui {
 
-enum class Screen : uint8_t { Boot, Deck, Settings, DebugSettings, StatusDebug, ChimeLab, Help };
+enum class Screen : uint8_t { Boot, Deck, Settings, DebugSettings, Previews,
+                              StatusDebug, ChimeLab, Help };
 
 enum class SettingsRow : uint8_t { BleProfile, Volume, StartupSound, Exit, Count };
-enum class DebugSettingsRow : uint8_t {
-    UsbHid, PreviewSplash, PreviewPairing, PreviewControl, ChimeLab, StatusDebug, Count
-};
-enum class DeveloperPreview : uint8_t { None, Splash, Pairing, Control };
+enum class DebugSettingsRow : uint8_t { UsbHid, Previews, ChimeLab, StatusDebug, Count };
+// Screen checks live on their own list. Each renders a real path with fake
+// data, which is not the same kind of thing as a switch that changes how the
+// device behaves, and the two do not belong in one menu.
+enum class PreviewsRow : uint8_t { Splash, Pairing, Control, Stick, Count };
+enum class DeveloperPreview : uint8_t { None, Splash, Pairing, Control, Stick };
 
 void init();
 
@@ -67,6 +70,11 @@ void note_composer_control_lamps(const uint32_t* rgb, const float* level);
 // That frame, not a timer, is what takes the page down.
 void note_composer_control_closed();
 void note_composer_control_preview();
+// The same instrument page for the four arrow keys. It fixes on nothing, so it
+// always closes itself three seconds after the last press.
+void notify_stick_step(int direction);   // 0 right, 1 down, 2 left, 3 up
+bool stick_control_active();
+void dismiss_stick_control();
 void cancel_status_announcements();
 
 // Local settings screen: move between rows and toggle the focused local value.
@@ -74,6 +82,8 @@ void settings_move(int delta);
 SettingsRow settings_focus();
 void debug_settings_move(int delta);
 DebugSettingsRow debug_settings_focus();
+void previews_move(int delta);
+PreviewsRow previews_focus();
 void show_developer_preview(DeveloperPreview preview);
 void close_developer_preview();
 bool developer_preview_active();
