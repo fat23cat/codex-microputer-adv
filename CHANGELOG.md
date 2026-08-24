@@ -26,8 +26,9 @@
 - The startup score is started before the radio, so its first blocks are queued
   outside the window where a bonded host reconnects and floods the device.
 - Took libm off the boot score's sample path, the way the status scores already
-  had it: it was evaluating an exp() per note per sample. Rendering it fell
-  from 259 ms to well inside the splash.
+  had it: it was evaluating an exp() per note per sample. Measured on the
+  device, rendering it fell from 259 ms to 197 ms, with the score's peak
+  unchanged to two decimals -- the table is transparent.
 - The output rate is deliberately left at the driver default. Running it at
   16 kHz to match the material saves a 4x resample, but that resample is also
   the only low-pass between the scores and the amplifier, and without it the
