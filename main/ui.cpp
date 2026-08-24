@@ -828,11 +828,11 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
 // in the dial's family -- same white keyline, same tone ladder -- because it is
 // the same kind of page about a different control, and two dialects of one
 // idea would just look like two unrelated screens.
-constexpr int kGateRx  = 34;   // the recess milled into the plate
-constexpr int kGateRy  = 15;
-constexpr int kCapRx   = 18;   // the rubber cap that slides inside it
+constexpr int kGateRx  = 37;   // the recess milled into the plate: wide
+constexpr int kGateRy  = 14;   // enough that a full throw stays inside it
+constexpr int kCapRx   = 18;   // the rubber cap that slides across it
 constexpr int kCapRy   = 8;
-constexpr int kCapWall = 7;
+constexpr int kCapWall = 9;
 
 void draw_stick(int cx, int cy, float lx, float ly, uint16_t base, float copy)
 {
@@ -851,8 +851,10 @@ void draw_stick(int cx, int cy, float lx, float ly, uint16_t base, float copy)
 
     // The cap slides; it does not lean. Screen x and y travel in the ratio of
     // the ellipse, so the motion stays in the plane of the plate.
-    const int px = cx + static_cast<int>(lx * 12.f);
-    const int py = cy + static_cast<int>(ly * 5.f);
+    // Its base rides on the plate, so the cap stands proud of the recess
+    // rather than down inside it -- a rubber nub you can get a thumb on.
+    const int px = cx + static_cast<int>(lx * 16.f);
+    const int py = cy + 1 - kCapWall + static_cast<int>(ly * 7.f);
 
     for (int t = kCapWall; t >= 0; --t)
         fill_ellipse(px, py + t, kCapRx + kOutline, kCapRy + kOutline, line);
@@ -912,10 +914,10 @@ void draw_stick_control_takeover()
     const uint16_t faint = mix(base, kPaper, static_cast<uint8_t>(copy * 78.f));
 
     const int cx = kScreenW / 2;
-    const int cy = 66;
+    const int cy = 70;
     draw_stick(cx, cy, stick_lean_x.x, stick_lean_y.x, base, copy);
 
-    const float step = motion::clamp01(1.f - stick_step_age / 0.34f);
+    const float step = motion::clamp01(1.f - stick_step_age / 0.45f);
     static const int8_t dirs[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
     for (int d = 0; d < 4; ++d) {
         const bool hot = stick_step_dir == d && step > 0.f;
@@ -924,7 +926,7 @@ void draw_stick_control_takeover()
                   copy * std::min(255.f, 70.f + step * 185.f)))
             : faint;
         const int dx = dirs[d][0], dy = dirs[d][1];
-        draw_chevron(cx + dx * 66, cy + dy * 42, dx, dy, c);
+        draw_chevron(cx + dx * 56, cy - 4 + dy * 34, dx, dy, c);
     }
 
     draw_tracked_transparent("STICK", (kScreenW - tracked_width("STICK", 2)) / 2,
@@ -2153,8 +2155,8 @@ void notify_stick_step(int direction)
     // Push the stick over, then let it fall back to centre on its own spring.
     // The impulse the host receives is instantaneous; the object is not.
     static const int8_t dirs[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
-    stick_lean_x.snap(static_cast<float>(dirs[direction][0]));
-    stick_lean_y.snap(static_cast<float>(-dirs[direction][1]));
+    stick_lean_x.snap(dirs[direction][0] * 1.15f);
+    stick_lean_y.snap(dirs[direction][1] * -1.15f);
     stick_lean_x.to(0.f);
     stick_lean_y.to(0.f);
     invalidate();
@@ -2376,8 +2378,10 @@ void service()
         stick_control_idle += dt;
         stick_step_age += dt;
         animating = true;
-        if (!stick_lean_x.settled()) stick_lean_x.step(dt, 22.f, 0.55f);
-        if (!stick_lean_y.settled()) stick_lean_y.step(dt, 22.f, 0.55f);
+        // Loose and slow to come back: the throw has to be legible at a
+        // glance, and a stiff spring made it a twitch nobody could see.
+        if (!stick_lean_x.settled()) stick_lean_x.step(dt, 15.f, 0.45f);
+        if (!stick_lean_y.settled()) stick_lean_y.step(dt, 15.f, 0.45f);
         // Always. An arrow is an impulse: the host consumes it and reports
         // nothing back, so there is no state here for the page to wait on and
         // no reason for it to outlive the gesture.

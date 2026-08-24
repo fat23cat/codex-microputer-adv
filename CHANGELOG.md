@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.1 — 2026-08-24
+
+- Brought the stick's chevrons in close. Set out at the screen edges they read
+  as four separate marks rather than as the throws of one control.
+- Stood the cap on the plate instead of down inside the recess, and widened the
+  recess so a full throw still lands within it. It was a nub sunk in a hole.
+- Made the throw legible: further travel, and a looser spring that takes its
+  time coming back. The old one was a twitch that was over before it was seen.
+
 ## 0.10.0 — 2026-08-24
 
 - The four arrow keys get the dial's page. Same flood, same family of drawing:
