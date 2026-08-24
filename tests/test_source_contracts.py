@@ -78,8 +78,12 @@ require("main/ui.cpp",
         r"void draw_keycap\(int cx, int cy, const CapSpec& spec, CapGlyph glyph,",
         "the select key must be drawn as an isometric keycap")
 require("main/ui.cpp",
-        r"CapGlyph::BracketOpen : CapGlyph::BracketClose",
-        "the two detent directions must be keys carrying the brackets the host receives")
+        r"draw_keycap\(186, 54, kCapSelect, CapGlyph::Enter,",
+        "the confirm cap must carry the return arrow, not the encoder's own punctuation")
+require("main/main.cpp",
+        r"if \(press\.key == Key::Enter && ui::composer_control_active\(\)\) \{"
+        r"[\s\S]{0,600}send_encoder_press_to\(target\)",
+        "Enter must confirm the host's control surface instead of submitting the composer")
 require("main/ui.cpp",
         r"const int dw = spec\.w - spec\.w / 3;[\s\S]{0,420}hline\(cx - half, top \+ dy - 1, half \* 2 \+ 1, dish\);",
         "the cap must carry a dish as a filled tone, not another parallel edge")

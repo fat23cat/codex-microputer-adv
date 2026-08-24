@@ -848,6 +848,21 @@ void handle_press(const Press& press)
                 }
             }
         }
+        if (press.key == Key::Enter && ui::composer_control_active()) {
+            // While the host owns a control surface, Enter is the confirm.
+            // The dial's own click is on `\\`, which is the encoder switch and
+            // stays wired to it, but nothing on that page is a message, so
+            // submitting the composer from here would be the wrong gesture
+            // entirely -- and the page already draws an Enter cap.
+            ui::notify_composer_control_select();
+            const auto target = codex_micro::active_transport();
+            const bool sent = send_encoder_press_to(target)
+                           && codex_micro::send_key_to(target, "ENC", 0);
+            std::printf("CCP_UI|composer|confirm_via_enter|sent=%d\n", sent ? 1 : 0);
+            if (!sent) ui::toast("DIAL", "no host", theme::kOrange);
+            else audio::play(audio::Cue::MenuApply);
+            break;
+        }
         if (press.key == Key::Enter) {
             // Stock Codex Micro's CODEX key submits the composer. Ending
             // push-to-talk only prepares text; Enter is the deliberate,

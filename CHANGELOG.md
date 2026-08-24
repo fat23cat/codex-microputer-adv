@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.4 — 2026-08-24
+
+- Put the chevrons back beside the dial. As keycaps the two detent directions
+  turned a page with one control on it into a page with three, and the dial
+  stopped being the subject of it.
+- The confirm cap now carries a return arrow instead of `\`. `\` is the
+  physical encoder switch and stays wired to it, but as a legend it named the
+  key rather than the action.
+- Enter confirms the host's control surface while it is open, instead of
+  submitting the composer. Nothing on that page is a message.
+
 ## 0.9.3 — 2026-08-24
 
 - Replaced the chevrons flanking the dial with two small keycaps carrying `[`
