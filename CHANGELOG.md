@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.3 — 2026-08-22
+
+- The keycap's rounding is visible because it is no longer a superellipse. A
+  smooth exponent turned the cap into a coin: in this projection the edges have
+  to stay dead straight or the object stops sitting on the ground plane. The
+  edges are exact again and only the four tips are flattened, which is what
+  rounding means at this pixel size.
+- The keyline is now laid down as one dilated silhouette of the whole cap
+  instead of outlining the top face and the walls separately, which used to
+  leave tabs sticking out at the tips.
+- The dish is a real recess -- a shade back from the face with its far edge
+  catching the light -- rather than a one-pixel inset outline that could not be
+  seen at all.
+- Broke the knob's top edge with a chamfer. Machined aluminium always has one,
+  and without it the cap read as a lid dropped onto a tube.
+- The lamp row is drawn only when the host has actually sent a frame. Before
+  the first one it was six empty wells: a strip that showed nothing and could
+  not be read as anything. When it is absent the instrument takes the whole
+  height and centres.
+
 ## 0.8.2 — 2026-08-22
 
 - The keycap is a keycap now: rounded corners instead of four rhombus spikes,

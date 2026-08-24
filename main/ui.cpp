@@ -792,8 +792,11 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
     // Body: bottom cap, straight wall, flat top. No taper, no shading ramp.
     fill_ellipse(cx, ring_y, kKnobRx, kKnobRy, wall);
     fill_rect(cx - kKnobRx, cy, kKnobRx * 2 + 1, kKnobWall, wall);
-    fill_ellipse(cx, cy, kKnobRx, kKnobRy, cap);
-    draw_ellipse(cx, cy, kKnobRx, kKnobRy, edge);
+    // The rim is chamfered, not cut square: a mid band between the wall and the
+    // flat of the cap. Machined aluminium always breaks that edge, and without
+    // it the top reads as a lid dropped onto a tube.
+    fill_ellipse(cx, cy, kKnobRx, kKnobRy, edge);
+    fill_ellipse(cx, cy - 1, kKnobRx - 3, kKnobRy - 2, cap);
 
     // Knurling: twenty-four flutes around the wall, so one 30-degree detent
     // walks the pattern by exactly two -- unmistakable, and never a blur.
@@ -816,14 +819,30 @@ void draw_knob(int cx, int cy, float angle, uint16_t base, uint16_t glow,
               cy + static_cast<int>(kKnobRy * 0.60f * sa) - 1, 3, 3, mark);
 }
 
-// Half-width of the keycap outline at row `dy`. A pure rhombus gives four sharp
-// spikes, which no keycap has; the exponent rounds the corners while keeping the
-// isometric proportions, so the shape still sits on the same ground plane.
+// Half-width of the keycap outline at row `dy`. A keycap in this projection is
+// a rhombus, and its edges have to stay straight or the object stops sitting on
+// the ground plane -- a superellipse turns it into a coin. So the edges are kept
+// exact and only the four tips are flattened, which is what rounding means at
+// this pixel size.
 int cap_half(int dy, int half_w, int half_h)
 {
-    const float t = std::fabs(static_cast<float>(dy)) / static_cast<float>(half_h);
-    if (t >= 1.f) return 0;
-    return static_cast<int>(half_w * std::pow(1.f - std::pow(t, 1.45f), 1.f / 1.45f));
+    const int a = std::abs(dy);
+    if (a > half_h) return 0;
+    const float d = half_w * (1.f - static_cast<float>(a) / static_cast<float>(half_h));
+    const float tip  = half_w * 0.10f;   // the flat left at the top and bottom
+    const float side = half_w - 3.f;     // and at the left and right
+    return static_cast<int>(std::min(std::max(d, tip), side));
+}
+
+// The whole cap's silhouette at row `dy`: the top face above, the straight
+// extrusion below it. Used to lay the keyline down as one dilated shape, which
+// is the only way to get an even weight all the way round -- outlining the top
+// and the walls separately leaves tabs sticking out at the four tips.
+int cap_silhouette(int dy, int half_w, int half_h, int wall)
+{
+    if (dy <= 0) return cap_half(dy, half_w, half_h);
+    if (dy <= wall) return cap_half(0, half_w, half_h);
+    return cap_half(dy - wall, half_w, half_h);
 }
 
 // The `\` keycap. A cube read as a sticker, so this is built as a cap: rounded
@@ -832,7 +851,7 @@ void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
 {
     constexpr int kHalfW = 28;
     constexpr int kHalfH = 15;
-    constexpr int kWall  = 14;
+    constexpr int kWall  = 16;
 
     const float down = motion::clamp01(press);
     const int wall = kWall - static_cast<int>(down * 7.f);
@@ -843,28 +862,26 @@ void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
     const uint16_t left  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.16f));
     const uint16_t right = mix(base, kPaper, static_cast<uint8_t>(ink * 0.34f));
     const uint16_t face  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.62f));
-    const uint16_t dish  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.74f));
+    const uint16_t well  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.50f));
+    const uint16_t dish  = mix(base, kPaper, static_cast<uint8_t>(ink * 0.86f));
     const uint16_t key   = mix(base, kPaper, ink);
-    const uint16_t mark  = mix(face, kInk,  static_cast<uint8_t>(copy * 235.f));
+    const uint16_t mark  = mix(well, kInk,  static_cast<uint8_t>(copy * 235.f));
 
     // Contact shadow, tightening as the cap goes down. Most of what sells the
     // travel is the shadow, not the two pixels the cap actually moves.
     fill_ellipse(cx, top + kHalfH + wall + 4 - static_cast<int>(down * 2.f),
                  kHalfW - 5 + static_cast<int>(down * 3.f), 3, shade);
 
-    // Keyline: the whole silhouette, oversized, with the faces sunk into it.
-    for (int dy = -kHalfH - kOutline; dy <= kHalfH + kOutline; ++dy) {
-        const int half = cap_half(dy, kHalfW + kOutline, kHalfH + kOutline);
+    // Keyline: the whole silhouette, dilated, with the faces sunk into it.
+    for (int dy = -kHalfH - kOutline; dy <= kHalfH + wall + kOutline; ++dy) {
+        int half = 0;
+        for (int d = -kOutline; d <= kOutline; ++d) {
+            const int body = cap_silhouette(dy + d, kHalfW, kHalfH, wall);
+            if (body > 0)
+                half = std::max(half, body + kOutline - std::abs(d));
+        }
         if (half <= 0) continue;
         hline(cx - half, top + dy, half * 2 + 1, key);
-        if (dy >= 0) hline(cx - half, top + dy + wall, half * 2 + 1, key);
-    }
-    for (int dx = -kHalfW - kOutline; dx <= kHalfW + kOutline; ++dx) {
-        const float t = std::fabs(static_cast<float>(dx))
-                      / static_cast<float>(kHalfW + kOutline);
-        const int y = top + static_cast<int>((kHalfH + kOutline)
-            * std::pow(std::max(0.f, 1.f - std::pow(t, 1.45f)), 1.f / 1.45f));
-        vline(cx + dx, y, wall + 1, key);
     }
 
     // Walls, then the top face.
@@ -877,13 +894,23 @@ void draw_keycap(int cx, int cy, float press, uint16_t base, float copy)
         if (half <= 0) continue;
         hline(cx - half, top + dy, half * 2 + 1, face);
     }
-    // The dish: an inset repeat of the same outline, which is what makes a flat
-    // top read as a moulded cap rather than a painted lid.
-    for (int dy = -kHalfH + 4; dy <= kHalfH - 4; ++dy) {
-        const int half = cap_half(dy, kHalfW - 7, kHalfH - 4);
+    // The dish. A one-pixel inset outline was invisible, so it is cut as an
+    // actual recess: the well is a shade back from the face and its far edge
+    // catches the light, which is the whole reason a moulded cap looks moulded.
+    for (int dy = -kHalfH + 5; dy <= kHalfH - 5; ++dy) {
+        const int half = cap_half(dy, kHalfW - 8, kHalfH - 5);
         if (half <= 0) continue;
-        fill_rect(cx - half, top + dy, 1, 1, dish);
-        fill_rect(cx + half, top + dy, 1, 1, dish);
+        hline(cx - half, top + dy, half * 2 + 1, well);
+    }
+    for (int dy = -kHalfH + 5; dy <= 0; ++dy) {
+        const int half = cap_half(dy, kHalfW - 8, kHalfH - 5);
+        if (half <= 0) continue;
+        hline(cx - half, top + dy, half * 2 + 1, dish);
+        break;
+    }
+    for (int dx = -kHalfW + 8; dx <= kHalfW - 8; ++dx) {
+        const int rise = cap_half(dx, kHalfH - 5, kHalfW - 8);
+        fill_rect(cx + dx, top - rise, 1, 1, dish);
     }
 
     // The legend lies in the plane of the cap: it runs down the isometric axis
@@ -938,6 +965,12 @@ void draw_composer_control_takeover()
     const uint16_t text  = mix(base, kPaper, static_cast<uint8_t>(copy * 255.f));
     const uint16_t faint = mix(base, kPaper, static_cast<uint8_t>(copy * 78.f));
 
+    // The lamp row only exists when the host has actually said something. Before
+    // the first preview frame it was six empty wells -- a strip that showed
+    // nothing and could not be read as anything, so it is not drawn, and the
+    // instrument takes the whole height instead.
+    const int oy = composer_lamp_valid ? 0 : 9;
+
     // The instrument. A detent leans the knob a little in the direction it
     // turned and lights that side's chevron for the length of the detent.
     const float step = motion::clamp01(1.f - composer_control_step_age / 0.34f);
@@ -947,7 +980,7 @@ void draw_composer_control_takeover()
         ? composer_lamp_colour[lit_lamp] : kPaper;
     const float glow_level = (composer_lamp_valid && lit_lamp >= 0)
         ? composer_lamp_level[lit_lamp].x : 0.f;
-    draw_knob(76 + lean, 36, composer_knob_angle.x, base, glow, glow_level, copy);
+    draw_knob(76 + lean, 36 + oy, composer_knob_angle.x, base, glow, glow_level, copy);
 
     for (int side = 0; side < 2; ++side) {
         const int dir = side == 0 ? -1 : 1;
@@ -958,13 +991,13 @@ void draw_composer_control_takeover()
             : faint;
         const int ax = side == 0 ? 33 : 119;
         for (int k = 0; k < 6; ++k)
-            vline(ax + dir * k, 50 - 5 + k / 2, 11 - k, c);
+            vline(ax + dir * k, 50 + oy - 5 + k / 2, 11 - k, c);
     }
 
-    draw_keycap(186, 46, composer_key_press.x, base, copy);
+    draw_keycap(186, 46 + oy, composer_key_press.x, base, copy);
 
-    draw_tracked_transparent("TURN", 76 - tracked_width("TURN", 2) / 2, 90, 2, text);
-    draw_tracked_transparent("SELECT", 186 - tracked_width("SELECT", 2) / 2, 90, 2, text);
+    draw_tracked_transparent("TURN", 76 - tracked_width("TURN", 2) / 2, 90 + oy, 2, text);
+    draw_tracked_transparent("SELECT", 186 - tracked_width("SELECT", 2) / 2, 90 + oy, 2, text);
     // Esc is the way out of every other surface on the device, so it has to be
     // the way out of this one too, and has to say so.
     draw_tracked_right("ESC", kScreenW - 10, 8, 1, faint, base);
@@ -973,25 +1006,29 @@ void draw_composer_control_takeover()
     // six task cells occupy. Until a preview frame arrives they are empty
     // wells: the device says it does not know the scale rather than inventing
     // one.
+    if (!composer_lamp_valid) return;
     const int lamp_y = 108;
     for (int i = 0; i < kLampCount; ++i) {
         const int lx = cell_x(i);
         const int lw = cell_w(i);
-        // A recessed well behind every lamp. Without it a host lamp that happens
-        // to be the same blue as this surface would simply vanish.
+        // A recessed well behind every lamp, drawn whether or not a frame has
+        // arrived, so the row always reads as six lamps. Without the well a
+        // host lamp that happens to be this surface's blue simply vanishes.
         fill_rect(lx, lamp_y + 1, lw, 12, mix(base, kInk,
-                  static_cast<uint8_t>(copy * 64.f)));
+                  static_cast<uint8_t>(copy * 74.f)));
+        fill_rect(lx, lamp_y, lw, 1, faint);
         fill_rect(lx, lamp_y + 13, lw, 1, faint);
-        if (!composer_lamp_valid) continue;
+        vline(lx, lamp_y, 14, faint);
+        vline(lx + lw - 1, lamp_y, 14, faint);
         const float level = motion::clamp01(composer_lamp_level[i].x);
         const uint16_t colour = mix(base, composer_lamp_colour[i],
                                     static_cast<uint8_t>(copy * 255.f));
         const int h = 2 + static_cast<int>(level * 10.f);
-        fill_rect(lx, lamp_y + 13 - h, lw, h,
+        fill_rect(lx + 1, lamp_y + 13 - h, lw - 2, h,
                   mix(mix(base, colour, 90), colour,
                       static_cast<uint8_t>(level * 255.f)));
     }
-    if (composer_lamp_valid && lit_lamp >= 0) {
+    if (lit_lamp >= 0) {
         const float m = composer_lamp_marker.x;
         const int idx = std::clamp(static_cast<int>(m), 0, kLampCount - 1);
         const int nxt = std::clamp(idx + 1, 0, kLampCount - 1);
