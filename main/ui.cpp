@@ -67,6 +67,9 @@ int  voice_slot = 0;
 motion::Spring composer_control_amount;      // selected cell -> host control surface
 bool composer_control_target = false;
 float composer_control_idle = 99.f;
+// Set once the session has become something: a click was made, or the host lit
+// a lamp in answer. Until then the page is only the evidence that a dial moved.
+bool composer_control_engaged = false;
 float composer_control_step_age = 99.f;
 int composer_control_step_dir = 0;
 uint32_t composer_control_closed_at_ms = 0;
@@ -2017,6 +2020,7 @@ void set_composer_control_active(bool active)
     composer_control_target = active;
     composer_control_amount.to(active ? 1.f : 0.f);
     composer_control_idle = active ? 0.f : 99.f;
+    composer_control_engaged = false;
     composer_control_step_age = 99.f;
     composer_control_step_dir = 0;
     composer_key_hold = -1.f;
@@ -2081,6 +2085,10 @@ void notify_composer_control_select()
     composer_key_press.snap(1.f);
     composer_key_hold = 0.f;
     composer_control_idle = 0.f;
+    // A click may have stepped into a submenu, and from the click alone the
+    // device cannot tell. So it stops timing: from here the page waits for the
+    // host or for Esc, however long the user takes.
+    composer_control_engaged = true;
     invalidate();
 }
 
@@ -2102,6 +2110,7 @@ void note_composer_control_lamps(const uint32_t* rgb, const float* level)
     if (lit >= 0) {
         composer_lamp_lit = lit;
         composer_lamp_marker.to(static_cast<float>(lit));
+        composer_control_engaged = true;
     }
     invalidate();
 }
@@ -2127,7 +2136,7 @@ void note_composer_control_preview()
         // off the pending exit: a click on Micro can just as easily step into a
         // submenu or cycle a value, and the device cannot tell which from the
         // click alone. It can tell from this.
-        composer_control_idle = 0.f;
+        if (composer_control_engaged) composer_control_idle = 0.f;
         dirty = true;
         return;
     }
@@ -2330,14 +2339,22 @@ void service()
                 composer_key_hold = -1.f;
             }
         }
-        // Nothing here closes the page. Every timer tried for this -- a fixed
-        // wait after the click, then a test of the host's silence -- was the
-        // device guessing at a state only Codex knows, and each one cut a
-        // selection short. Codex says it plainly: it blanks or whites out all
-        // six lamps when a control surface closes. That frame takes the page
-        // down; so does Esc. Until one of them arrives it stays, however long
-        // the user takes.
         else animating = true;
+        // Once the session is engaged, nothing here closes the page. Every
+        // timer tried for that -- a fixed wait after the click, then a test of
+        // the host's silence -- was the device guessing at a state only Codex
+        // knows, and each one cut a selection short. Codex says it plainly: it
+        // blanks or whites out all six lamps when a control surface closes.
+        // That frame takes the page down; so does Esc.
+        //
+        // The one case a timer can read correctly is the one where there is no
+        // state to guess at: the dial was nudged, nothing was clicked, the host
+        // lit nothing in reply. That is a stray turn, not a session, and it
+        // should not leave a page sitting on the screen.
+        if (!composer_control_engaged && composer_control_idle >= 3.f) {
+            std::printf("CCP_UI|composer|closed_idle_unengaged\n");
+            dismiss_composer_control_preview();
+        }
     }
 
     for (float& p : cell_press) {

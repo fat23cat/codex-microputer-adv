@@ -80,6 +80,14 @@ require("main/ui.cpp",
 require("main/ui.cpp",
         r"draw_keycap\(186, 54, kCapSelect, CapGlyph::Enter,",
         "the confirm cap must carry the return arrow, not the encoder's own punctuation")
+require("main/ui.cpp",
+        r"if \(!composer_control_engaged && composer_control_idle >= 3\.f\) \{"
+        r"[\s\S]{0,160}dismiss_composer_control_preview\(\);",
+        "a dial nudged with nothing clicked and nothing lit must not leave a page behind")
+require("main/ui.cpp",
+        r"composer_lamp_marker\.to\(static_cast<float>\(lit\)\);\s*"
+        r"composer_control_engaged = true;",
+        "a lit lamp from the host must engage the session and stop the idle timer")
 require("main/main.cpp",
         r"if \(press\.key == Key::Enter && ui::composer_control_active\(\)\) \{"
         r"[\s\S]{0,600}send_encoder_press_to\(target\)",

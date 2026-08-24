@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.5 — 2026-08-24
+
+- The control page closes itself three seconds after the last detent, but only
+  while the session is still nothing: no click made, no lamp lit in reply. A
+  dial nudged and abandoned is a stray turn, not a session, and it should not
+  leave a page on the screen.
+- A click, or any lit lamp from the host, engages the session and stops the
+  clock for good. From there the page still waits for the host's own close
+  frame or for Esc, however long the user takes -- which is the part every
+  earlier timer got wrong.
+
 ## 0.9.4 — 2026-08-24
 
 - Put the chevrons back beside the dial. As keycaps the two detent directions
