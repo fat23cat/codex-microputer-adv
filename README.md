@@ -4,6 +4,10 @@
 | --- | --- | --- | --- |
 | ![Codex Microputer ADV splash screen](screenshots/splash.png) | ![Bluetooth pairing screen](screenshots/pairing.png) | ![Six-task control deck](screenshots/deck.png) | ![Voice recording screen](screenshots/recording.png) |
 
+<p align="center">
+  <video src="screenshots/demo.mp4" controls muted loop playsinline width="100%"></video>
+</p>
+
 Codex Microputer ADV turns an M5Stack Cardputer ADV into a native six-channel
 hardware controller for the Codex desktop app. It speaks the Codex Micro HID
 protocol directly over USB or Bluetooth Low Energy. No bridge, daemon, API key,
