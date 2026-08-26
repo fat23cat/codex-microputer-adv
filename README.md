@@ -5,7 +5,9 @@
 | ![Codex Microputer ADV splash screen](screenshots/splash.png) | ![Bluetooth pairing screen](screenshots/pairing.png) | ![Six-task control deck](screenshots/deck.png) | ![Voice recording screen](screenshots/recording.png) |
 
 <p align="center">
-  <video src="https://github.com/pfrankov/codex-microputer-adv/releases/download/v0.10.3/demo.mp4" controls muted loop playsinline width="100%"></video>
+  <a href="https://github.com/pfrankov/codex-microputer-adv/releases/download/v0.10.3/demo.mp4">
+    <img src="screenshots/demo_poster.jpg" alt="Live demo video (35 s, click to watch)" width="100%">
+  </a>
 </p>
 
 Codex Microputer ADV turns an M5Stack Cardputer ADV into a native six-channel
