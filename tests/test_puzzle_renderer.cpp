@@ -163,6 +163,8 @@ void selected_tile_breathes_without_changing_hue()
     const auto high = puzzle_renderer::render(input)[0];
     check(high.r > low.r && high.g >= low.g && high.b >= low.b,
           "selected tile changes luminance across its breath");
+    check(static_cast<int>(high.r) - low.r >= 8,
+          "selection breath remains visible after the ten-percent output cap");
     check(std::abs(high.r * low.g - low.r * high.g) <= 30,
           "selection breath retains the status hue");
 }
@@ -229,7 +231,7 @@ void takeover_draws_exact_digits_one_through_six()
         for (int row = 0; row < 5; ++row) {
             for (int col = 0; col < 3; ++col) {
                 const bool expected = (digits[slot][row] & (1u << (2 - col))) != 0;
-                const auto pixel = frame[puzzle_renderer::logical_index(2 + col, 1 + row)];
+                const auto pixel = frame[puzzle_renderer::logical_index(3 + col, 1 + row)];
                 check((pixel != surface) == expected,
                       "each takeover numeral has its exact 3x5 mask");
             }

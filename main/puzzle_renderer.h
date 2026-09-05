@@ -182,8 +182,12 @@ inline Frame render(const Input& input)
         const Slot& task = input.slots[slot];
         if (!task.present) continue;
         const Bounds bounds = slot_bounds(slot);
+        // The panel is safety-capped at ten percent, so a subtle modulation
+        // disappears into 8-bit quantisation.  Give the selected tile a broad
+        // but still smooth luminance range while preserving its status hue.
+        const float breath = 0.5f + 0.5f * std::sin(input.phase * 2.f);
         const float selected = slot == input.selected
-            ? 0.925f + 0.075f * std::sin(input.phase * 2.f)
+            ? 0.55f + 0.45f * breath
             : 0.82f;
         for (int y = bounds.y; y < bounds.y + bounds.h; ++y) {
             for (int x = bounds.x; x < bounds.x + bounds.w; ++x) {
@@ -264,7 +268,7 @@ inline Frame render(const Input& input)
             for (int row = 0; row < 5; ++row) {
                 for (int col = 0; col < 3; ++col) {
                     if ((digits[takeover.slot][row] & (1u << (2 - col))) == 0) continue;
-                    const std::size_t pixel = logical_index(2 + col, 1 + row);
+                    const std::size_t pixel = logical_index(3 + col, 1 + row);
                     frame[pixel] = mix(frame[pixel], foreground, numeral);
                 }
             }
