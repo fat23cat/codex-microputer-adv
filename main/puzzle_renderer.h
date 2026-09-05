@@ -73,9 +73,10 @@ struct Bounds {
 
 constexpr Bounds slot_bounds(int slot)
 {
-    // A one-pixel outer frame leaves a 6x6 interior, which divides exactly
-    // into six identical, contiguous 2x3 slots.
-    return Bounds{1 + (slot % 3) * 2, 1 + (slot / 3) * 3, 2, 3};
+    // Six true 2x2 squares sit as separated islands. Columns 2 and 5, the
+    // centre rows, and the top/bottom edges belong to the selected-status
+    // field, so the complete 8x8 panel stays visually cohesive.
+    return Bounds{(slot % 3) * 3, 1 + (slot / 3) * 4, 2, 2};
 }
 
 constexpr std::size_t logical_index(int x, int y)
@@ -189,20 +190,25 @@ inline Frame render(const Input& input)
             : status_colour(selected_slot.status, selected_slot.unseen_done);
         border_activity = 0.22f + 0.28f * breath;
     }
-    // The perimeter carries the selected status colour and breathes with its
-    // tile, making selection readable without changing any slot geometry.
+    // Every pixel outside the six square islands carries the selected status
+    // colour. This turns the unavoidable 8x8 remainder into a cohesive field
+    // instead of dark holes, and gives the selection breath enough area to be
+    // legible at the ten-percent hardware ceiling.
     const Rgb border = mix(Rgb{}, border_colour, border_activity);
-    for (int y = 0; y < kHeight; ++y) {
-        for (int x = 0; x < kWidth; ++x) {
-            if (x == 0 || x == kWidth - 1 || y == 0 || y == kHeight - 1)
-                frame[logical_index(x, y)] = border;
-        }
-    }
+    frame.fill(border);
 
     for (int slot = 0; slot < kSlotCount; ++slot) {
         const Slot& task = input.slots[slot];
-        if (!task.present) continue;
         const Bounds bounds = slot_bounds(slot);
+        if (!task.present) {
+            // Unbound slots remain explicit dark squares rather than being
+            // mistaken for part of the selected-status background.
+            for (int y = bounds.y; y < bounds.y + bounds.h; ++y) {
+                for (int x = bounds.x; x < bounds.x + bounds.w; ++x)
+                    frame[logical_index(x, y)] = {};
+            }
+            continue;
+        }
         // The panel is safety-capped at ten percent, so a subtle modulation
         // disappears into 8-bit quantisation.  Give the selected tile a broad
         // but still smooth luminance range while preserving its status hue.

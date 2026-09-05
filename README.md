@@ -172,9 +172,10 @@ the standard Grove cable. The default build sends the WS2812E data stream on
 GPIO2. One matrix is supported; the Puzzle output socket is not used.
 
 The 8x8 matrix lays slots 1-3 across the top and slots 4-6 across the bottom.
-The one-LED outer frame carries the selected task's status colour and breathes
-with it; inside, the remaining 6x6 field divides exactly into six equal 2x3
-blocks with no dark gutters. Unassigned tasks are off. Running is blue, input-needed is orange,
+Each task is a true 2x2 square. The columns and rows between the six square
+islands, plus the top and bottom edges, form a dim field in the selected task's
+status colour and breathe with it, so none of the unavoidable spare LEDs become
+dark gutters. Unassigned task squares are off. Running is blue, input-needed is orange,
 completed-unread is green, completed-viewed is light grey, idle is a dim
 neutral, and error is a red mark on black. The selected block breathes gently.
 When the LCD plays a status takeover, the corresponding block expands to the

@@ -3,8 +3,9 @@
 ## 0.11.0 — 2026-09-05
 
 - Added an optional M5Stack Puzzle Unit 8x8 mirror for the six Codex task
-  slots. The display uses a 3x2 layout and follows selection, task colours,
-  unread completion state, and the LCD status-takeover timeline.
+  slots. The display uses six separated 2x2 square islands on a dim,
+  selection-coloured field and follows selection, task colours, unread
+  completion state, and the LCD status-takeover timeline.
 - Added a pure host-tested Puzzle renderer and a small RMT/WS2812 hardware
   adapter built on Espressif `led_strip` 3.0.1. Output is capped at 30 FPS,
   unchanged frames are skipped, and initialization failure is non-fatal.
