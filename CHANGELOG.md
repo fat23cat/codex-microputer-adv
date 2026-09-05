@@ -13,9 +13,9 @@
   sleep or while Codex is offline, and is safety-capped at 10% brightness.
   GPIO, rotation, brightness, and the whole integration are build-time options.
 - Added status-specific 2x2 microanimations, a short light route between task
-  selections, a static non-distracting background field, and a palette tuned
-  to keep idle, viewed, running, input, completion, and error distinct on real
-  WS2812E emitters at the 10% ceiling.
+  selections, a static non-distracting background field, a steady brighter
+  selected square, and a palette tuned to keep idle, viewed, running, input,
+  completion, and error distinct on real WS2812E emitters at the 10% ceiling.
 
 ## 0.10.3 — 2026-08-24
 

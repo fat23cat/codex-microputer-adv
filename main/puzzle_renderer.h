@@ -257,7 +257,6 @@ inline Frame render(const Input& input)
     Frame frame{};
     if (!input.linked || input.brightness <= 0.f) return frame;
 
-    const float breath = 0.5f + 0.5f * std::sin(input.phase * 2.f);
     const SelectionTravel& travel = input.selection_travel;
     Rgb field_colour = status_colour(model::Status::Idle, false);
     float field_activity = 0.14f;
@@ -274,9 +273,8 @@ inline Frame render(const Input& input)
                            motion::ease_in_out_cubic(travel.progress));
     }
     // Every pixel outside the six square islands carries the selected status
-    // colour. It is intentionally static: only the selected square breathes,
-    // so the unavoidable 8x8 remainder supports focus instead of competing
-    // with it.
+    // colour. It is intentionally static, so the unavoidable 8x8 remainder
+    // supports focus instead of competing with the task microanimations.
     const Rgb field = mix(Rgb{}, field_colour, field_activity);
     frame.fill(field);
 
@@ -292,12 +290,9 @@ inline Frame render(const Input& input)
             }
             continue;
         }
-        // The panel is safety-capped at ten percent, so a subtle modulation
-        // disappears into 8-bit quantisation.  Give the selected tile a broad
-        // but still smooth luminance range while preserving its status hue.
-        const float selected = slot == input.selected
-            ? 0.35f + 0.65f * breath
-            : 0.82f;
+        // Selection is a stable brightness step. Status animations remain
+        // independent, but selecting a task never makes the whole tile pulse.
+        const float selected = slot == input.selected ? 1.f : 0.68f;
         for (int y = bounds.y; y < bounds.y + bounds.h; ++y) {
             for (int x = bounds.x; x < bounds.x + bounds.w; ++x) {
                 float activity = selected;

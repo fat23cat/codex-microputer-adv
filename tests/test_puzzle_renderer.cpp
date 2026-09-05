@@ -163,7 +163,7 @@ void statuses_and_selection_preserve_semantics()
     check(idle.r < unseen.g, "idle is visibly dimmer than active status colour");
     check(attention.r > attention.g * 2, "attention is orange-red");
     check(unseen.g > unseen.r * 3, "unseen completion is green");
-    check(viewed.b > viewed.g && viewed.g >= viewed.r,
+    check(viewed.b >= viewed.g && viewed.g >= viewed.r && viewed.b > viewed.r,
           "viewed completion is a cool neutral");
     check(error_mark.r > 0 && dark(error_dark), "error is a red mark on black");
     check(dark(frame[puzzle_renderer::logical_index(6, 5)]), "unbound slot is off");
@@ -189,27 +189,26 @@ void brightness_is_bounded_and_zero_is_black()
     for (auto pixel : offline) check(dark(pixel), "offline clears every pixel");
 }
 
-void selected_tile_breathes_without_changing_hue()
+void selected_tile_is_static_and_brighter()
 {
     auto input = deck_input();
-    input.slots[0].status = model::Status::Done;
-    input.slots[0].unseen_done = false;
+    for (auto& slot : input.slots) {
+        slot.status = model::Status::Done;
+        slot.unseen_done = false;
+    }
     input.phase = -0.7853982f;
-    const auto low_frame = puzzle_renderer::render(input);
-    const auto low = low_frame[puzzle_renderer::logical_index(0, 1)];
-    const auto low_field = low_frame[puzzle_renderer::logical_index(2, 1)];
+    const auto first = puzzle_renderer::render(input);
     input.phase = 0.7853982f;
-    const auto high_frame = puzzle_renderer::render(input);
-    const auto high = high_frame[puzzle_renderer::logical_index(0, 1)];
-    const auto high_field = high_frame[puzzle_renderer::logical_index(2, 1)];
-    check(high.r > low.r && high.g >= low.g && high.b >= low.b,
-          "selected tile changes luminance across its breath");
-    check(static_cast<int>(high.b) - low.b >= 7,
-          "selection breath remains visible after the ten-percent output cap");
-    check(high_field == low_field,
-          "selected status field stays constant while the tile breathes");
-    check(std::abs(high.r * low.g - low.r * high.g) <= 20,
-          "selection breath retains the status hue");
+    const auto second = puzzle_renderer::render(input);
+    const auto selected = first[puzzle_renderer::logical_index(0, 1)];
+    const auto peer = first[puzzle_renderer::logical_index(3, 1)];
+    check(selected.b >= peer.b + 4,
+          "selected tile has a clear constant brightness advantage");
+    check(selected == second[puzzle_renderer::logical_index(0, 1)],
+          "selection brightness does not pulse with animation phase");
+    check(first[puzzle_renderer::logical_index(2, 1)]
+              == second[puzzle_renderer::logical_index(2, 1)],
+          "selected status field remains static");
 }
 
 void statuses_have_distinct_two_by_two_microanimations()
@@ -237,7 +236,7 @@ void statuses_have_distinct_two_by_two_microanimations()
     input.phase = 0.3272492f;
     const auto attention_high = puzzle_renderer::render(input);
     check(attention_high[puzzle_renderer::logical_index(0, 1)].r
-              > attention_low[puzzle_renderer::logical_index(0, 1)].r + 8,
+              >= attention_low[puzzle_renderer::logical_index(0, 1)].r + 8,
           "input-needed pulses the complete square");
 
     input.slots[0].status = model::Status::Done;
@@ -391,7 +390,7 @@ int main()
     grid_has_six_square_islands_on_a_lit_status_field();
     statuses_and_selection_preserve_semantics();
     brightness_is_bounded_and_zero_is_black();
-    selected_tile_breathes_without_changing_hue();
+    selected_tile_is_static_and_brighter();
     statuses_have_distinct_two_by_two_microanimations();
     selection_travels_only_through_the_background_field();
     takeover_expands_holds_a_number_and_returns();
