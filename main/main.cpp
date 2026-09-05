@@ -36,6 +36,7 @@
 #include "puzzle_unit.h"
 #include "sdmmc_cmd.h"
 #include "store.h"
+#include "storage_partition.h"
 #include "theme.h"
 #include "ui.h"
 
@@ -53,6 +54,7 @@ int staged_count = 0;
 uint32_t staged_started_ms = 0;
 constexpr uint32_t kStagedBatchTimeoutMs = 2000;
 bool exit_armed = false;
+bool ble_reset_armed = false;
 struct VoiceGesture {
     bool active = false;
     bool agent_key_down = false;
@@ -439,7 +441,10 @@ void commit_tasks(int selected_hint)
 void enable_m5apps_autostart()
 {
     nvs_handle_t handle = 0;
-    esp_err_t err = nvs_open_from_partition("apps_nvs", "system", NVS_READWRITE, &handle);
+    const char* partition = storage_partition::nvs_label();
+    esp_err_t err = partition
+        ? nvs_open_from_partition(partition, "system", NVS_READWRITE, &handle)
+        : ESP_ERR_NOT_FOUND;
     if (err == ESP_OK)
         err = nvs_set_u8(handle, "last_app", 1);
     if (err == ESP_OK)
@@ -601,6 +606,7 @@ void handle_press(const Press& press)
     }
     if (ui::screen() == ui::Screen::DebugSettings) {
         if (press.key == Key::Up) {
+            ble_reset_armed = false;
             ui::debug_settings_move(-1);
             hostlink::sendf("CCP_MENU|debug|move=-1|focus=%d\n",
                             static_cast<int>(ui::debug_settings_focus()));
@@ -608,6 +614,7 @@ void handle_press(const Press& press)
             return;
         }
         if (press.key == Key::Down) {
+            ble_reset_armed = false;
             ui::debug_settings_move(1);
             hostlink::sendf("CCP_MENU|debug|move=1|focus=%d\n",
                             static_cast<int>(ui::debug_settings_focus()));
@@ -617,13 +624,14 @@ void handle_press(const Press& press)
         if (press.key == Key::Enter) {
             const ui::DebugSettingsRow row = ui::debug_settings_focus();
             if (row == ui::DebugSettingsRow::UsbHid) {
+                ble_reset_armed = false;
                 const bool requested = !s.usb_hid_enabled;
                 s.usb_hid_enabled = requested;
                 // Persist before removing USB so an unexpected cable event or
                 // reset cannot resurrect a mode the user explicitly disabled.
                 if (!store::flush()) {
                     s.usb_hid_enabled = !requested;
-                    ui::toast("SETTINGS ERROR", "USB preference not saved", theme::kError);
+                    ui::toast("USB NOT SAVED", store::last_error_name(), theme::kError);
                     ui::invalidate();
                     return;
                 }
@@ -632,7 +640,7 @@ void handle_press(const Press& press)
                     // The rollback itself must land in NVS, or a reboot would
                     // resurrect the mode whose activation just failed.
                     if (!store::flush())
-                        ui::toast("SETTINGS ERROR", "USB preference not saved",
+                        ui::toast("USB NOT SAVED", store::last_error_name(),
                                   theme::kError);
                     else
                         ui::toast("USB HID ERROR", "State unchanged", theme::kError);
@@ -645,6 +653,24 @@ void handle_press(const Press& press)
                 ui::invalidate();
                 return;
             }
+            if (row == ui::DebugSettingsRow::ResetBluetooth) {
+                if (!ble_reset_armed) {
+                    ble_reset_armed = true;
+                    ui::toast("RESET BLE BONDS?", "Press enter again", theme::kInput);
+                    return;
+                }
+                ble_reset_armed = false;
+                const esp_err_t reset_error = companion_ble_forget_bonds();
+                if (reset_error != ESP_OK) {
+                    ui::toast("BLE RESET FAILED", esp_err_to_name(reset_error), theme::kError);
+                } else {
+                    ui::toast("BLE BONDS CLEARED", "Forget device on Mac", theme::kDone);
+                    audio::play(audio::Cue::Select);
+                }
+                ui::invalidate();
+                return;
+            }
+            ble_reset_armed = false;
             if (row == ui::DebugSettingsRow::Previews) {
                 ui::go(ui::Screen::Previews);
             } else {
@@ -777,7 +803,7 @@ void handle_press(const Press& press)
                 static_cast<uint8_t>((profile + (press.key == Key::Right ? 2 : 1)) % 3);
             if (!store::flush()) {
                 profile = previous_profile;
-                ui::toast("SETTINGS ERROR", "Host channel not saved", theme::kError);
+                ui::toast("HOST NOT SAVED", store::last_error_name(), theme::kError);
                 return;
             }
             const bool switching = companion_ble_select_profile(profile);

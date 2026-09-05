@@ -208,8 +208,17 @@ not require pairing again. Signal strength is monitored and transmit power is
 adjusted dynamically.
 
 The firmware stores settings and BLE bonds in its own `codex_ccp2` namespace in
-M5Apps' shared `apps_nvs` partition. It never erases the partition. It contains
-no credentials for Codex, GitHub, OpenAI, Wi-Fi, or any other service.
+the loader-owned NVS partition. It prefers M5Apps' `apps_nvs` label and safely
+falls back to a compatible partition discovered by the standard NVS subtype,
+including the conventional `nvs` label. It never erases the partition and
+contains no credentials for Codex, GitHub, OpenAI, Wi-Fi, or any other service.
+
+If a saved Mac bond becomes unusable, open the hidden **Opt+Tab** debug menu,
+select **RESET BLE BONDS**, and press Enter twice. This removes only Codex
+Microputer's BLE keys and CCCD records; local preferences and other M5Apps data
+remain intact. Then remove `Codex Micro ADV` from macOS Bluetooth settings and
+pair again. Storage failures show their exact ESP-IDF error name on the device
+and in the USB diagnostic log.
 
 ## Verification
 
