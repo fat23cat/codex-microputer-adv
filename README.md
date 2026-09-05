@@ -20,6 +20,8 @@ Wi-Fi connection, or background script is required.
 ## What it does
 
 - Mirrors the six task slots exposed by Codex Micro.
+- Optionally mirrors the same six slots and status takeovers on one M5Stack
+  Puzzle Unit 8x8 RGB matrix.
 - Shows running, waiting, completed-unread, completed-viewed, error, and idle
   states as a full-screen six-column instrument panel.
 - Opens a task immediately with keys `1` through `6`.
@@ -61,7 +63,10 @@ update may require corresponding firmware changes.
 
 ## Requirements
 
-- M5Stack Cardputer ADV with an 8 MB flash chip.
+- [M5Stack Cardputer ADV](https://docs.m5stack.com/en/core/Cardputer-Adv) with
+  an 8 MB flash chip.
+- Optional: one [M5Stack Puzzle Unit](https://docs.m5stack.com/en/unit/Unit-Puzzle)
+  and its standard Grove cable.
 - A microSD card for the first M5Apps installation, or a USB cable for the
   development installer.
 - [M5Apps](https://github.com/d4rkmen/M5Apps) installed on the device.
@@ -159,6 +164,40 @@ Option+Tab exposes status animation tests, ten startup compositions, a
 -300..+300 ms status-audio offset in 25 ms steps, debounce choices, BLE/USB
 controls, and preview screens. These tools use the production rendering and
 audio paths but do not mutate a Codex task.
+
+### Puzzle Unit task mirror
+
+Connect the Cardputer ADV Grove port to the Puzzle Unit's **INPUT** socket with
+the standard Grove cable. The default build sends the WS2812E data stream on
+GPIO2. One matrix is supported; the Puzzle output socket is not used.
+
+The 8x8 matrix lays slots 1-3 across the top and slots 4-6 across the bottom.
+Each task is a true 2x2 square. The columns and rows between the six square
+islands, plus the top and bottom edges, form a dim field in the selected task's
+status colour, so none of the unavoidable spare LEDs become dark gutters. The
+field stays still, and the selected square is steadily much brighter than its
+peers. Idle keeps the complete 2x2 square visible in a brighter warm neutral.
+Unassigned task squares are off. Running is an orbiting electric-blue corner,
+input-needed pulses amber-orange, completed-unread gives a short green sparkle,
+completed-viewed is static cool grey, idle is a dim warm neutral, and error
+alternates two red diagonals on black. Selection changes send a 220 ms light
+pulse through the field from the previous square to the new one.
+When the LCD plays a status takeover, the corresponding block expands to the
+whole matrix and shows its centred 4x6 slot number on the same timeline. While the LCD
+is in a menu, queued status events wait and the Puzzle continues to show the
+task deck.
+
+The matrix follows the effective, debounced Codex backlight level. Sleep,
+backlight zero, or loss of the Codex session clears all 64 LEDs. Hardware
+updates are capped at 30 FPS and identical frames are not retransmitted. The
+default and hard renderer ceiling are 10% of full WS2812 brightness, matching
+M5Stack's continuous-use recommendation.
+
+Build-time settings live under **Codex Microputer hardware** in `menuconfig`:
+`CONFIG_CODEX_PUZZLE_ENABLED`, `CONFIG_CODEX_PUZZLE_GPIO`, the 0/90/180/270
+rotation choice, and `CONFIG_CODEX_PUZZLE_MAX_BRIGHTNESS_PERCENT`. The feature
+is enabled by default in this fork. Rotation changes only the logical-to-wire
+mapping and does not affect the renderer or Codex protocol.
 
 ## Connection behavior
 

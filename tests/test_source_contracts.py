@@ -517,6 +517,50 @@ require("main/ui.cpp",
         "the splash's build stamp belongs in the trim with the registration "
         "marks: tight against the corner mark and faded towards the paper")
 
+require("main/main.cpp", r"M5\.begin\(config\);[\s\S]{0,240}puzzle_unit::init\(\);[\s\S]{0,120}hostlink::init\(\);",
+        "Puzzle hardware must be cleared in one isolated call early in startup")
+require("main/main.cpp",
+        r"ui::service_power\(\);\s*\n\s*ui::service\(\);\s*\n\s*puzzle_unit::service\(\);",
+        "Puzzle must mirror the already-updated power and UI state")
+require("main/ui.cpp",
+        r"StatusTakeoverSnapshot status_takeover_snapshot\(\)[\s\S]{0,700}"
+        r"status_animation::viewed_fade_progress\(\s*announce_fade_to_viewed",
+        "secondary displays must read the LCD takeover clock and viewed fade")
+require("main/puzzle_unit.cpp",
+        r"kFrameIntervalMs\s*=\s*33[\s\S]{0,9000}frame != previous_frame",
+        "Puzzle updates must be capped at 30 FPS and deduplicate frames")
+require("main/puzzle_unit.cpp",
+        r"kSelectionTravelMs\s*=\s*220[\s\S]{0,9000}"
+        r"selection_travel\.from\s*=\s*travel_from[\s\S]{0,240}"
+        r"selection_travel\.progress",
+        "Puzzle selection travel must be timed in the isolated hardware adapter")
+require("main/puzzle_unit.cpp",
+        r"effective_light_level\(\)[\s\S]{0,120}CODEX_PUZZLE_MAX_BRIGHTNESS_PERCENT",
+        "Puzzle brightness must follow the effective LCD level")
+require("main/puzzle_unit.cpp",
+        r"hold_data_low\(\);[\s\S]{0,160}esp_rom_delay_us\(100\);[\s\S]{0,160}create_strip\(\)",
+        "Puzzle data must be held low before RMT starts")
+require("main/puzzle_unit.cpp", r"\.with_dma\s*=\s*false",
+        "one 64-pixel Puzzle must use the non-DMA RMT path")
+require("main/puzzle_unit.cpp",
+        r"clear_error != ESP_OK[\s\S]{0,200}disable\(\);[\s\S]{0,40}return;",
+        "Puzzle clear failure must not prevent the rest of firmware startup")
+require("main/puzzle_unit.cpp",
+        r"void disable\(\)[\s\S]{0,420}led_strip_clear\(strip\);"
+        r"[\s\S]{0,80}led_strip_del\(strip\);",
+        "Puzzle failure shutdown must clear latched LEDs before deleting the driver")
+require("main/puzzle_renderer.h", r"kSafetyBrightnessCeiling\s*=\s*0\.10f",
+        "Puzzle renderer must retain the independent ten-percent safety cap")
+require("main/puzzle_renderer.h",
+        r"\(kHeight - 1 - panel_y\) \+ panel_x \* kHeight",
+        "Puzzle wire mapping must remain isolated from logical rendering")
+require("main/idf_component.yml", r"espressif/led_strip:\s*3\.0\.1",
+        "Puzzle must pin the reviewed led_strip release")
+require("main/Kconfig.projbuild",
+        r"config CODEX_PUZZLE_ENABLED[\s\S]{0,100}default y[\s\S]{0,500}"
+        r"config CODEX_PUZZLE_GPIO[\s\S]{0,100}default 2",
+        "this fork must enable one GPIO2 Puzzle Unit by default")
+
 require("main/codex_micro_protocol.cpp", r"rpc_framer::Assembler usb_input;[\s\S]{0,120}rpc_framer::Assembler ble_input;", "USB and BLE must not share partial RPC state")
 require("main/codex_micro_protocol.cpp", r"xQueueCreateStatic[\s\S]{0,1200}xQueueReceive", "protocol callbacks must hand reports to main task")
 forbid("main/ble_store_apps_nvs.cpp", r"nvs_erase_all\(", "BLE migration must never erase user settings")

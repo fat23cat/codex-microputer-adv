@@ -33,6 +33,7 @@
 #include "link.h"
 #include "model.h"
 #include "nvs_flash.h"
+#include "puzzle_unit.h"
 #include "sdmmc_cmd.h"
 #include "store.h"
 #include "theme.h"
@@ -1101,6 +1102,9 @@ extern "C" void app_main(void)
 {
     auto config = M5.config();
     M5.begin(config);
+    // Clear the external LEDs before the slower storage and UI startup work.
+    // Puzzle failures are deliberately non-fatal inside this isolated call.
+    puzzle_unit::init();
 
     hostlink::init();
     usb_serial_jtag_vfs_use_driver();
@@ -1267,6 +1271,7 @@ extern "C" void app_main(void)
         store::service();
         ui::service_power();
         ui::service();
+        puzzle_unit::service();
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }

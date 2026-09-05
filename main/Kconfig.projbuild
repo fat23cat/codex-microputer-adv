@@ -1,0 +1,44 @@
+menu "Codex Microputer hardware"
+
+config CODEX_PUZZLE_ENABLED
+    bool "Enable M5Stack Puzzle Unit task mirror"
+    default y
+    help
+        Drive one 8x8 Unit Puzzle from the Cardputer Grove port. The output is
+        one-way, so leaving the unit unplugged is safe.
+
+if CODEX_PUZZLE_ENABLED
+
+config CODEX_PUZZLE_GPIO
+    int "Puzzle Unit data GPIO"
+    range 0 48
+    default 2
+
+choice CODEX_PUZZLE_ROTATION
+    prompt "Puzzle Unit logical rotation"
+    default CODEX_PUZZLE_ROTATION_0
+
+config CODEX_PUZZLE_ROTATION_0
+    bool "0 degrees"
+
+config CODEX_PUZZLE_ROTATION_90
+    bool "90 degrees clockwise"
+
+config CODEX_PUZZLE_ROTATION_180
+    bool "180 degrees"
+
+config CODEX_PUZZLE_ROTATION_270
+    bool "270 degrees clockwise"
+
+endchoice
+
+config CODEX_PUZZLE_MAX_BRIGHTNESS_PERCENT
+    int "Puzzle Unit maximum brightness percent"
+    range 1 10
+    default 10
+    help
+        M5Stack recommends no more than 10 percent for continuous operation.
+
+endif
+
+endmenu

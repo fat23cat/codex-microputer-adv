@@ -6,6 +6,8 @@
 
 #include <cstdint>
 
+#include "model.h"
+
 namespace ui {
 
 enum class Screen : uint8_t { Boot, Deck, Settings, DebugSettings, Previews,
@@ -18,6 +20,18 @@ enum class DebugSettingsRow : uint8_t { UsbHid, Previews, ChimeLab, StatusDebug,
 // device behaves, and the two do not belong in one menu.
 enum class PreviewsRow : uint8_t { Splash, Pairing, Control, Stick, Count };
 enum class DeveloperPreview : uint8_t { None, Splash, Pairing, Control, Stick };
+
+// Read-only presentation state for secondary displays. Consumers mirror the
+// existing UI timeline; they never consume announcements or mutate the model.
+struct StatusTakeoverSnapshot {
+    bool active = false;
+    int8_t slot = -1;
+    model::Status status = model::Status::Idle;
+    bool unseen = false;
+    bool fade_to_viewed = false;
+    float viewed_progress = 0.f;
+    float age = 0.f;
+};
 
 void init();
 
@@ -104,5 +118,7 @@ void toast(const char* title, const char* detail, uint16_t accent);
 bool wake();
 void service_power();
 bool asleep();
+float effective_light_level();
+StatusTakeoverSnapshot status_takeover_snapshot();
 
 }  // namespace ui

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.11.0 — 2026-09-05
+
+- Added an optional M5Stack Puzzle Unit 8x8 mirror for the six Codex task
+  slots. The display uses six separated 2x2 square islands on a dim,
+  selection-coloured field and follows selection, task colours, unread
+  completion state, and the LCD status-takeover timeline.
+- Added a pure host-tested Puzzle renderer and a small RMT/WS2812 hardware
+  adapter built on Espressif `led_strip` 3.0.1. Output is capped at 30 FPS,
+  unchanged frames are skipped, and initialization failure is non-fatal.
+- Puzzle output follows the debounced LCD light level, turns fully off during
+  sleep or while Codex is offline, and is safety-capped at 10% brightness.
+  GPIO, rotation, brightness, and the whole integration are build-time options.
+- Added status-specific 2x2 microanimations, a short light route between task
+  selections, a static non-distracting background field, a steady brighter
+  selected square, and a palette tuned to keep idle, viewed, running, input,
+  completion, and error distinct on real WS2812E emitters at the 10% ceiling.
+  Idle retains a clearly visible full 2x2 surface, while a wider fixed
+  brightness gap prevents the selected square from disappearing into its peers.
+
 ## 0.10.3 — 2026-08-24
 
 - The stick page has sound: right and up rise, left and down fall, on the same

@@ -2246,6 +2246,30 @@ bool wake()
 
 bool asleep() { return power_state == 2; }
 
+float effective_light_level()
+{
+    return std::clamp(static_cast<float>(applied_brightness) / kBrightFull, 0.f, 1.f);
+}
+
+StatusTakeoverSnapshot status_takeover_snapshot()
+{
+    StatusTakeoverSnapshot snapshot;
+    snapshot.active = announcing();
+    snapshot.slot = static_cast<int8_t>(announce_slot_index);
+    snapshot.status = announce_status;
+    snapshot.unseen = announce_unseen;
+    snapshot.fade_to_viewed = announce_fade_to_viewed;
+    snapshot.age = announce_age;
+    if (!snapshot.active || announce_age < kAnnounceRailOut) return snapshot;
+
+    const model::Task* live_task = announce_slot_index >= 0
+                                && announce_slot_index < model::state.task_count
+        ? &model::state.tasks[announce_slot_index] : nullptr;
+    snapshot.viewed_progress = status_animation::viewed_fade_progress(
+        announce_fade_to_viewed, live_task, announce_age - kAnnounceRailOut);
+    return snapshot;
+}
+
 void service_power()
 {
     const uint32_t now = lgfx::millis();
