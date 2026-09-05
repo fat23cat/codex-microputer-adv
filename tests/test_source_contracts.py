@@ -545,6 +545,10 @@ require("main/puzzle_unit.cpp", r"\.with_dma\s*=\s*false",
 require("main/puzzle_unit.cpp",
         r"clear_error != ESP_OK[\s\S]{0,200}disable\(\);[\s\S]{0,40}return;",
         "Puzzle clear failure must not prevent the rest of firmware startup")
+require("main/puzzle_unit.cpp",
+        r"void disable\(\)[\s\S]{0,420}led_strip_clear\(strip\);"
+        r"[\s\S]{0,80}led_strip_del\(strip\);",
+        "Puzzle failure shutdown must clear latched LEDs before deleting the driver")
 require("main/puzzle_renderer.h", r"kSafetyBrightnessCeiling\s*=\s*0\.10f",
         "Puzzle renderer must retain the independent ten-percent safety cap")
 require("main/puzzle_renderer.h",

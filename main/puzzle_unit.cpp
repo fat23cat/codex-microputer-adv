@@ -91,6 +91,10 @@ void disable()
     live = false;
     frame_valid = false;
     if (strip) {
+        // WS2812 pixels retain their last latched colour after the RMT driver
+        // is removed.  Make a best-effort attempt to latch black first so an
+        // adapter failure cannot leave the panel lit indefinitely.
+        led_strip_clear(strip);
         led_strip_del(strip);
         strip = nullptr;
     }
