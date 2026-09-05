@@ -1,6 +1,6 @@
-// Runtime discovery for the M5Apps-owned NVS partition. M5Apps releases use
-// `apps_nvs`, while other compatible loaders may retain the conventional
-// `nvs` label. Partition type/subtype is the stable contract.
+// Runtime discovery for the loader-owned/shared NVS partition. Prefer the
+// `apps_nvs` label used by M5Apps, then fall back to any partition whose
+// DATA/NVS type and subtype satisfy the stable loader contract.
 #pragma once
 
 #include "esp_partition.h"
