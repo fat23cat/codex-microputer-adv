@@ -18,6 +18,14 @@
   completion, and error distinct on real WS2812E emitters at the 10% ceiling.
   Idle retains a clearly visible full 2x2 surface, while a wider fixed
   brightness gap prevents the selected square from disappearing into its peers.
+- Added an explicitly confirmed BLE-bond recovery action that erases only this
+  app's security keys, restarts advertising, and preserves M5Apps plus local
+  preferences. NVS failures now retain and display their concrete ESP-IDF
+  error and report partition entry statistics over USB diagnostics.
+- Storage now discovers the loader's NVS partition by type when the M5Apps
+  `apps_nvs` label is absent. This keeps host-channel preferences and BLE bonds
+  persistent across compatible partition tables that use the standard `nvs`
+  label instead.
 
 ## 0.10.3 — 2026-08-24
 
