@@ -16,6 +16,8 @@
   selections, a static non-distracting background field, a steady brighter
   selected square, and a palette tuned to keep idle, viewed, running, input,
   completion, and error distinct on real WS2812E emitters at the 10% ceiling.
+  Idle retains a clearly visible full 2x2 surface, while a wider fixed
+  brightness gap prevents the selected square from disappearing into its peers.
 
 ## 0.10.3 — 2026-08-24
 

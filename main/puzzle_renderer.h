@@ -292,7 +292,7 @@ inline Frame render(const Input& input)
         }
         // Selection is a stable brightness step. Status animations remain
         // independent, but selecting a task never makes the whole tile pulse.
-        const float selected = slot == input.selected ? 1.f : 0.68f;
+        const float selected = slot == input.selected ? 1.f : 0.55f;
         for (int y = bounds.y; y < bounds.y + bounds.h; ++y) {
             for (int x = bounds.x; x < bounds.x + bounds.w; ++x) {
                 float activity = selected;
@@ -300,25 +300,25 @@ inline Frame render(const Input& input)
                 const int local_x = x - bounds.x;
                 const int local_y = y - bounds.y;
                 if (task.status == model::Status::Idle) {
-                    activity *= 0.38f;
+                    activity *= 0.62f;
                 } else if (task.status == model::Status::Running) {
                     // A bright corner makes one smooth lap around the 2x2.
                     const int corner = local_y == 0 ? local_x : 3 - local_x;
                     const float orbit = 0.5f + 0.5f * std::cos(
                         input.phase * 4.f - corner * 1.5707963f);
-                    activity *= 0.38f + 0.62f * orbit * orbit;
+                    activity *= 0.52f + 0.48f * orbit * orbit;
                 } else if (task.status == model::Status::NeedsInput) {
                     const float attention = 0.5f + 0.5f * std::sin(input.phase * 4.8f);
-                    activity *= 0.52f + 0.48f * attention;
+                    activity *= 0.64f + 0.36f * attention;
                 } else if (task.status == model::Status::Done && task.unseen_done) {
                     float cycle = std::fmod(input.phase + slot * 0.17f, 2.4f);
                     if (cycle < 0.f) cycle += 2.4f;
                     const float sparkle = cycle < 0.42f
                         ? std::sin(cycle * 3.1415927f / 0.42f) : 0.f;
                     const bool sparkle_diagonal = local_x == local_y;
-                    activity *= 0.62f + sparkle * (sparkle_diagonal ? 0.38f : 0.10f);
+                    activity *= 0.72f + sparkle * (sparkle_diagonal ? 0.28f : 0.08f);
                 } else if (task.status == model::Status::Done) {
-                    activity *= 0.68f;
+                    activity *= 0.82f;
                 } else if (task.status == model::Status::Error) {
                     // Alternate the two diagonals. The other pair stays black,
                     // retaining the LCD's red-mark-on-dark error semantics.

@@ -175,7 +175,8 @@ The 8x8 matrix lays slots 1-3 across the top and slots 4-6 across the bottom.
 Each task is a true 2x2 square. The columns and rows between the six square
 islands, plus the top and bottom edges, form a dim field in the selected task's
 status colour, so none of the unavoidable spare LEDs become dark gutters. The
-field stays still, and the selected square is steadily brighter than its peers.
+field stays still, and the selected square is steadily much brighter than its
+peers. Idle keeps the complete 2x2 square visible in a brighter warm neutral.
 Unassigned task squares are off. Running is an orbiting electric-blue corner,
 input-needed pulses amber-orange, completed-unread gives a short green sparkle,
 completed-viewed is static cool grey, idle is a dim warm neutral, and error

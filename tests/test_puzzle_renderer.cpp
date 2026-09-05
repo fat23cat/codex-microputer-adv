@@ -152,6 +152,7 @@ void statuses_and_selection_preserve_semantics()
     input.slots[3].status = model::Status::Done;
     input.slots[4].status = model::Status::Error;
     input.slots[5].present = false;
+    input.selected = -1;
     const auto frame = puzzle_renderer::render(input);
     const auto idle = frame[puzzle_renderer::logical_index(0, 1)];
     const auto attention = frame[puzzle_renderer::logical_index(3, 1)];
@@ -161,7 +162,8 @@ void statuses_and_selection_preserve_semantics()
     const auto error_dark = frame[puzzle_renderer::logical_index(4, 5)];
     check(idle.r >= idle.b && idle.r > 0, "idle is a dim warm neutral");
     check(idle.r < unseen.g, "idle is visibly dimmer than active status colour");
-    check(attention.r > attention.g * 2, "attention is orange-red");
+    check(attention.r >= attention.g * 2 && attention.r > attention.b * 4,
+          "attention is orange-red");
     check(unseen.g > unseen.r * 3, "unseen completion is green");
     check(viewed.b >= viewed.g && viewed.g >= viewed.r && viewed.b > viewed.r,
           "viewed completion is a cool neutral");
@@ -202,13 +204,20 @@ void selected_tile_is_static_and_brighter()
     const auto second = puzzle_renderer::render(input);
     const auto selected = first[puzzle_renderer::logical_index(0, 1)];
     const auto peer = first[puzzle_renderer::logical_index(3, 1)];
-    check(selected.b >= peer.b + 4,
+    check(selected.b >= peer.b + 6,
           "selected tile has a clear constant brightness advantage");
     check(selected == second[puzzle_renderer::logical_index(0, 1)],
           "selection brightness does not pulse with animation phase");
     check(first[puzzle_renderer::logical_index(2, 1)]
               == second[puzzle_renderer::logical_index(2, 1)],
           "selected status field remains static");
+
+    for (auto& slot : input.slots) slot.status = model::Status::Idle;
+    const auto idle = puzzle_renderer::render(input);
+    const auto selected_idle = idle[puzzle_renderer::logical_index(0, 1)];
+    const auto peer_idle = idle[puzzle_renderer::logical_index(3, 1)];
+    check(selected_idle.r >= 11 && selected_idle.r >= peer_idle.r + 5,
+          "idle remains a visible 2x2 square with strong selection contrast");
 }
 
 void statuses_have_distinct_two_by_two_microanimations()
@@ -236,7 +245,7 @@ void statuses_have_distinct_two_by_two_microanimations()
     input.phase = 0.3272492f;
     const auto attention_high = puzzle_renderer::render(input);
     check(attention_high[puzzle_renderer::logical_index(0, 1)].r
-              >= attention_low[puzzle_renderer::logical_index(0, 1)].r + 8,
+              >= attention_low[puzzle_renderer::logical_index(0, 1)].r + 4,
           "input-needed pulses the complete square");
 
     input.slots[0].status = model::Status::Done;
