@@ -121,7 +121,7 @@ void grid_has_six_square_islands_on_a_lit_status_field()
     check(lit == 64, "status field and six islands cover all 64 pixels");
     const auto field = frame[puzzle_renderer::logical_index(2, 1)];
     const auto slot = frame[puzzle_renderer::logical_index(0, 1)];
-    check(field.b > field.r * 3 && field.b > field.g * 2,
+    check(field.b > field.r * 3 && field.b >= field.g * 2,
           "background field carries the selected running colour");
     check(slot.b > field.b, "status islands remain distinct from the quiet field");
 }
@@ -129,19 +129,19 @@ void grid_has_six_square_islands_on_a_lit_status_field()
 void statuses_and_selection_preserve_semantics()
 {
     check(puzzle_renderer::status_colour(model::Status::Idle, false)
-              == puzzle_renderer::Rgb{222, 219, 209}, "idle palette is exact");
+              == puzzle_renderer::Rgb{190, 146, 72}, "idle palette is exact");
     check(puzzle_renderer::status_colour(model::Status::Running, false)
-              == puzzle_renderer::Rgb{27, 79, 208}, "running palette is exact");
+              == puzzle_renderer::Rgb{30, 108, 255}, "running palette is exact");
     check(puzzle_renderer::status_colour(model::Status::NeedsInput, false)
-              == puzzle_renderer::Rgb{226, 69, 30}, "input palette is exact");
+              == puzzle_renderer::Rgb{255, 122, 18}, "input palette is exact");
     check(puzzle_renderer::status_colour(model::Status::Done, true)
-              == puzzle_renderer::Rgb{38, 198, 58}, "unseen palette is exact");
+              == puzzle_renderer::Rgb{32, 208, 90}, "unseen palette is exact");
     check(puzzle_renderer::status_colour(model::Status::Done, false)
-              == puzzle_renderer::Rgb{228, 229, 225}, "viewed palette is exact");
+              == puzzle_renderer::Rgb{168, 183, 199}, "viewed palette is exact");
     check(puzzle_renderer::status_colour(model::Status::Error, false)
               == puzzle_renderer::Rgb{}, "error surface palette is black");
     check(puzzle_renderer::status_foreground(model::Status::Error)
-              == puzzle_renderer::Rgb{226, 69, 30}, "error mark palette is exact");
+              == puzzle_renderer::Rgb{255, 50, 50}, "error mark palette is exact");
 
     auto input = deck_input();
     input.phase = 0.7853982f;
@@ -157,15 +157,15 @@ void statuses_and_selection_preserve_semantics()
     const auto attention = frame[puzzle_renderer::logical_index(3, 1)];
     const auto unseen = frame[puzzle_renderer::logical_index(6, 1)];
     const auto viewed = frame[puzzle_renderer::logical_index(0, 5)];
-    const auto error_edge = frame[puzzle_renderer::logical_index(3, 5)];
-    const auto error_mark = frame[puzzle_renderer::logical_index(3, 6)];
+    const auto error_mark = frame[puzzle_renderer::logical_index(3, 5)];
+    const auto error_dark = frame[puzzle_renderer::logical_index(4, 5)];
     check(idle.r >= idle.b && idle.r > 0, "idle is a dim warm neutral");
     check(idle.r < unseen.g, "idle is visibly dimmer than active status colour");
     check(attention.r > attention.g * 2, "attention is orange-red");
     check(unseen.g > unseen.r * 3, "unseen completion is green");
-    check(std::abs(static_cast<int>(viewed.r) - viewed.g) <= 1,
-          "viewed completion is neutral");
-    check(dark(error_edge) && error_mark.r > 0, "error is a red mark on black");
+    check(viewed.b > viewed.g && viewed.g >= viewed.r,
+          "viewed completion is a cool neutral");
+    check(error_mark.r > 0 && dark(error_dark), "error is a red mark on black");
     check(dark(frame[puzzle_renderer::logical_index(6, 5)]), "unbound slot is off");
     check(!dark(frame[puzzle_renderer::logical_index(5, 5)]),
           "field beside an unbound slot keeps the selected status colour");
@@ -192,23 +192,109 @@ void brightness_is_bounded_and_zero_is_black()
 void selected_tile_breathes_without_changing_hue()
 {
     auto input = deck_input();
-    input.slots[0].status = model::Status::NeedsInput;
+    input.slots[0].status = model::Status::Done;
+    input.slots[0].unseen_done = false;
     input.phase = -0.7853982f;
     const auto low_frame = puzzle_renderer::render(input);
     const auto low = low_frame[puzzle_renderer::logical_index(0, 1)];
-    const auto low_border = low_frame[puzzle_renderer::logical_index(2, 1)];
+    const auto low_field = low_frame[puzzle_renderer::logical_index(2, 1)];
     input.phase = 0.7853982f;
     const auto high_frame = puzzle_renderer::render(input);
     const auto high = high_frame[puzzle_renderer::logical_index(0, 1)];
-    const auto high_border = high_frame[puzzle_renderer::logical_index(2, 1)];
+    const auto high_field = high_frame[puzzle_renderer::logical_index(2, 1)];
     check(high.r > low.r && high.g >= low.g && high.b >= low.b,
           "selected tile changes luminance across its breath");
-    check(static_cast<int>(high.r) - low.r >= 8,
+    check(static_cast<int>(high.b) - low.b >= 7,
           "selection breath remains visible after the ten-percent output cap");
-    check(static_cast<int>(high_border.r) - low_border.r >= 5,
-          "selected status field breath remains visible after the output cap");
-    check(std::abs(high.r * low.g - low.r * high.g) <= 30,
+    check(high_field == low_field,
+          "selected status field stays constant while the tile breathes");
+    check(std::abs(high.r * low.g - low.r * high.g) <= 20,
           "selection breath retains the status hue");
+}
+
+void statuses_have_distinct_two_by_two_microanimations()
+{
+    puzzle_renderer::Input input;
+    input.linked = true;
+    input.brightness = 0.10f;
+    input.slots[0].present = true;
+
+    input.slots[0].status = model::Status::Running;
+    input.phase = 0.f;
+    const auto running_a = puzzle_renderer::render(input);
+    input.phase = 0.3926991f;
+    const auto running_b = puzzle_renderer::render(input);
+    check(running_a[puzzle_renderer::logical_index(0, 1)].b
+              > running_a[puzzle_renderer::logical_index(1, 1)].b,
+          "running begins with one bright orbit corner");
+    check(running_b[puzzle_renderer::logical_index(1, 1)].b
+              > running_b[puzzle_renderer::logical_index(0, 1)].b,
+          "running orbit advances to the next corner");
+
+    input.slots[0].status = model::Status::NeedsInput;
+    input.phase = -0.3272492f;
+    const auto attention_low = puzzle_renderer::render(input);
+    input.phase = 0.3272492f;
+    const auto attention_high = puzzle_renderer::render(input);
+    check(attention_high[puzzle_renderer::logical_index(0, 1)].r
+              > attention_low[puzzle_renderer::logical_index(0, 1)].r + 8,
+          "input-needed pulses the complete square");
+
+    input.slots[0].status = model::Status::Done;
+    input.slots[0].unseen_done = true;
+    input.phase = 0.f;
+    const auto done_quiet = puzzle_renderer::render(input);
+    input.phase = 0.21f;
+    const auto done_sparkle = puzzle_renderer::render(input);
+    check(done_sparkle[puzzle_renderer::logical_index(0, 1)].g
+              > done_quiet[puzzle_renderer::logical_index(0, 1)].g,
+          "unread completion sparkles on a short diagonal");
+
+    input.slots[0].unseen_done = false;
+    input.phase = 0.f;
+    const auto viewed_a = puzzle_renderer::render(input);
+    input.phase = 1.f;
+    const auto viewed_b = puzzle_renderer::render(input);
+    check(viewed_a[puzzle_renderer::logical_index(0, 1)]
+              == viewed_b[puzzle_renderer::logical_index(0, 1)],
+          "viewed completion stays still");
+
+    input.slots[0].status = model::Status::Error;
+    input.phase = 0.f;
+    const auto error_a = puzzle_renderer::render(input);
+    input.phase = 0.7f;
+    const auto error_b = puzzle_renderer::render(input);
+    check(error_a[puzzle_renderer::logical_index(0, 1)].r > 0
+              && dark(error_a[puzzle_renderer::logical_index(1, 1)]),
+          "error begins on the first diagonal");
+    check(dark(error_b[puzzle_renderer::logical_index(0, 1)])
+              && error_b[puzzle_renderer::logical_index(1, 1)].r > 0,
+          "error alternates to the other diagonal");
+}
+
+void selection_travels_only_through_the_background_field()
+{
+    auto input = deck_input();
+    input.selected = 2;
+    input.phase = 0.33f;
+    const auto stable = puzzle_renderer::render(input);
+    input.selection_travel.active = true;
+    input.selection_travel.from = 0;
+    input.selection_travel.to = 2;
+    input.selection_travel.progress = 0.5f;
+    const auto travelling = puzzle_renderer::render(input);
+
+    int changed = 0;
+    for (int y = 0; y < puzzle_renderer::kHeight; ++y) {
+        for (int x = 0; x < puzzle_renderer::kWidth; ++x) {
+            const auto pixel = puzzle_renderer::logical_index(x, y);
+            if (stable[pixel] == travelling[pixel]) continue;
+            ++changed;
+            check(puzzle_renderer::slot_at(x, y) < 0,
+                  "selection travel never overwrites a task square");
+        }
+    }
+    check(changed > 0, "selection travel lights a route through the field");
 }
 
 void takeover_expands_holds_a_number_and_returns()
@@ -306,10 +392,12 @@ int main()
     statuses_and_selection_preserve_semantics();
     brightness_is_bounded_and_zero_is_black();
     selected_tile_breathes_without_changing_hue();
+    statuses_have_distinct_two_by_two_microanimations();
+    selection_travels_only_through_the_background_field();
     takeover_expands_holds_a_number_and_returns();
     takeover_draws_exact_digits_one_through_six();
     viewed_completion_fades_toward_neutral();
     if (failures) return EXIT_FAILURE;
-    std::cout << "PASS puzzle_renderer (8 scenarios)\n";
+    std::cout << "PASS puzzle_renderer (10 scenarios)\n";
     return EXIT_SUCCESS;
 }

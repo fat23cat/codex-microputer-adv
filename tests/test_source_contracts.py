@@ -527,8 +527,13 @@ require("main/ui.cpp",
         r"status_animation::viewed_fade_progress\(\s*announce_fade_to_viewed",
         "secondary displays must read the LCD takeover clock and viewed fade")
 require("main/puzzle_unit.cpp",
-        r"kFrameIntervalMs\s*=\s*33[\s\S]{0,6000}frame != previous_frame",
+        r"kFrameIntervalMs\s*=\s*33[\s\S]{0,9000}frame != previous_frame",
         "Puzzle updates must be capped at 30 FPS and deduplicate frames")
+require("main/puzzle_unit.cpp",
+        r"kSelectionTravelMs\s*=\s*220[\s\S]{0,9000}"
+        r"selection_travel\.from\s*=\s*travel_from[\s\S]{0,240}"
+        r"selection_travel\.progress",
+        "Puzzle selection travel must be timed in the isolated hardware adapter")
 require("main/puzzle_unit.cpp",
         r"effective_light_level\(\)[\s\S]{0,120}CODEX_PUZZLE_MAX_BRIGHTNESS_PERCENT",
         "Puzzle brightness must follow the effective LCD level")

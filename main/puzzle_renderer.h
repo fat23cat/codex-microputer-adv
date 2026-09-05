@@ -53,6 +53,13 @@ struct Takeover {
     float age = 0.f;
 };
 
+struct SelectionTravel {
+    bool active = false;
+    int from = -1;
+    int to = -1;
+    float progress = 1.f;
+};
+
 struct Input {
     Slot slots[kSlotCount] = {};
     int selected = -1;
@@ -61,6 +68,7 @@ struct Input {
     // Physical output scale, not a UI percentage. render() clamps it to the
     // manufacturer's 10% continuous-use recommendation.
     float brightness = 0.f;
+    SelectionTravel selection_travel;
     Takeover takeover;
 };
 
@@ -77,6 +85,20 @@ constexpr Bounds slot_bounds(int slot)
     // centre rows, and the top/bottom edges belong to the selected-status
     // field, so the complete 8x8 panel stays visually cohesive.
     return Bounds{(slot % 3) * 3, 1 + (slot / 3) * 4, 2, 2};
+}
+
+constexpr bool contains(Bounds bounds, int x, int y)
+{
+    return x >= bounds.x && x < bounds.x + bounds.w
+        && y >= bounds.y && y < bounds.y + bounds.h;
+}
+
+constexpr int slot_at(int x, int y)
+{
+    for (int slot = 0; slot < kSlotCount; ++slot) {
+        if (contains(slot_bounds(slot), x, y)) return slot;
+    }
+    return -1;
 }
 
 constexpr std::size_t logical_index(int x, int y)
@@ -122,12 +144,15 @@ inline Rgb mix(Rgb a, Rgb b, float amount)
 inline Rgb status_colour(model::Status status, bool unseen)
 {
     switch (status) {
-    case model::Status::Running:    return {27, 79, 208};
-    case model::Status::NeedsInput: return {226, 69, 30};
-    case model::Status::Done:       return unseen ? Rgb{38, 198, 58}
-                                                 : Rgb{228, 229, 225};
+    // These are deliberately separated after the final ten-percent scale:
+    // electric blue, amber-orange, fresh green, cool viewed grey, and a warm
+    // low idle all remain recognisable on real WS2812E emitters.
+    case model::Status::Running:    return {30, 108, 255};
+    case model::Status::NeedsInput: return {255, 122, 18};
+    case model::Status::Done:       return unseen ? Rgb{32, 208, 90}
+                                                 : Rgb{168, 183, 199};
     case model::Status::Error:      return {0, 0, 0};
-    case model::Status::Idle:       return {222, 219, 209};
+    case model::Status::Idle:       return {190, 146, 72};
     }
     return {};
 }
@@ -139,12 +164,19 @@ inline Rgb status_foreground(model::Status status)
     case model::Status::NeedsInput:
         return {244, 242, 236};
     case model::Status::Error:
-        return {226, 69, 30};
+        return {255, 50, 50};
     case model::Status::Done:
     case model::Status::Idle:
         return {0, 0, 0};
     }
     return {};
+}
+
+inline Rgb slot_accent(const Slot& slot)
+{
+    return slot.status == model::Status::Error
+        ? status_foreground(model::Status::Error)
+        : status_colour(slot.status, slot.unseen_done);
 }
 
 inline Rgb scaled(Rgb colour, float amount)
@@ -174,28 +206,79 @@ inline float expansion_coverage(int x, int y, Bounds source, float spread)
                            - static_cast<float>(distance) + 1.f);
 }
 
+using DistanceMap = std::array<int8_t, kPixelCount>;
+
+inline DistanceMap field_distances_from(int slot)
+{
+    DistanceMap distances;
+    distances.fill(-1);
+    if (slot < 0 || slot >= kSlotCount) return distances;
+
+    std::array<uint8_t, kPixelCount> queue{};
+    int head = 0;
+    int tail = 0;
+    const Bounds source = slot_bounds(slot);
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            if (slot_at(x, y) >= 0) continue;
+            const bool adjacent = ((x == source.x - 1 || x == source.x + source.w)
+                                   && y >= source.y && y < source.y + source.h)
+                               || ((y == source.y - 1 || y == source.y + source.h)
+                                   && x >= source.x && x < source.x + source.w);
+            if (!adjacent) continue;
+            const std::size_t pixel = logical_index(x, y);
+            distances[pixel] = 0;
+            queue[tail++] = static_cast<uint8_t>(pixel);
+        }
+    }
+
+    static constexpr int dx[] = {1, 0, -1, 0};
+    static constexpr int dy[] = {0, 1, 0, -1};
+    while (head < tail) {
+        const int pixel = queue[head++];
+        const int x = pixel % kWidth;
+        const int y = pixel / kWidth;
+        for (int direction = 0; direction < 4; ++direction) {
+            const int nx = x + dx[direction];
+            const int ny = y + dy[direction];
+            if (nx < 0 || nx >= kWidth || ny < 0 || ny >= kHeight
+                || slot_at(nx, ny) >= 0) continue;
+            const std::size_t neighbour = logical_index(nx, ny);
+            if (distances[neighbour] >= 0) continue;
+            distances[neighbour] = static_cast<int8_t>(distances[pixel] + 1);
+            queue[tail++] = static_cast<uint8_t>(neighbour);
+        }
+    }
+    return distances;
+}
+
 inline Frame render(const Input& input)
 {
     Frame frame{};
     if (!input.linked || input.brightness <= 0.f) return frame;
 
     const float breath = 0.5f + 0.5f * std::sin(input.phase * 2.f);
-    Rgb border_colour = status_colour(model::Status::Idle, false);
-    float border_activity = 0.18f;
+    const SelectionTravel& travel = input.selection_travel;
+    Rgb field_colour = status_colour(model::Status::Idle, false);
+    float field_activity = 0.14f;
     if (input.selected >= 0 && input.selected < kSlotCount
         && input.slots[input.selected].present) {
-        const Slot& selected_slot = input.slots[input.selected];
-        border_colour = selected_slot.status == model::Status::Error
-            ? status_foreground(model::Status::Error)
-            : status_colour(selected_slot.status, selected_slot.unseen_done);
-        border_activity = 0.22f + 0.28f * breath;
+        field_colour = slot_accent(input.slots[input.selected]);
+        field_activity = 0.24f;
+    }
+    if (travel.active && travel.from >= 0 && travel.from < kSlotCount
+        && travel.to >= 0 && travel.to < kSlotCount
+        && input.slots[travel.from].present && input.slots[travel.to].present) {
+        field_colour = mix(slot_accent(input.slots[travel.from]),
+                           slot_accent(input.slots[travel.to]),
+                           motion::ease_in_out_cubic(travel.progress));
     }
     // Every pixel outside the six square islands carries the selected status
-    // colour. This turns the unavoidable 8x8 remainder into a cohesive field
-    // instead of dark holes, and gives the selection breath enough area to be
-    // legible at the ten-percent hardware ceiling.
-    const Rgb border = mix(Rgb{}, border_colour, border_activity);
-    frame.fill(border);
+    // colour. It is intentionally static: only the selected square breathes,
+    // so the unavoidable 8x8 remainder supports focus instead of competing
+    // with it.
+    const Rgb field = mix(Rgb{}, field_colour, field_activity);
+    frame.fill(field);
 
     for (int slot = 0; slot < kSlotCount; ++slot) {
         const Slot& task = input.slots[slot];
@@ -213,25 +296,66 @@ inline Frame render(const Input& input)
         // disappears into 8-bit quantisation.  Give the selected tile a broad
         // but still smooth luminance range while preserving its status hue.
         const float selected = slot == input.selected
-            ? 0.55f + 0.45f * breath
+            ? 0.35f + 0.65f * breath
             : 0.82f;
         for (int y = bounds.y; y < bounds.y + bounds.h; ++y) {
             for (int x = bounds.x; x < bounds.x + bounds.w; ++x) {
                 float activity = selected;
-                if (task.status == model::Status::Idle) activity *= 0.42f;
-                if (task.status == model::Status::Running) {
-                    const float wave = std::sin(input.phase * (1.62f + 0.113f * slot)
-                                                + x * 0.73f + y * 1.19f);
-                    activity *= 0.91f + 0.09f * wave;
-                }
                 Rgb colour = status_colour(task.status, task.unseen_done);
-                if (task.status == model::Status::Error) {
-                    // Black is the error surface on the LCD. One red crossbar
-                    // keeps the tiny external slot addressable in the dark.
-                    colour = y == bounds.y + 1 ? Rgb{226, 69, 30} : Rgb{};
+                const int local_x = x - bounds.x;
+                const int local_y = y - bounds.y;
+                if (task.status == model::Status::Idle) {
+                    activity *= 0.38f;
+                } else if (task.status == model::Status::Running) {
+                    // A bright corner makes one smooth lap around the 2x2.
+                    const int corner = local_y == 0 ? local_x : 3 - local_x;
+                    const float orbit = 0.5f + 0.5f * std::cos(
+                        input.phase * 4.f - corner * 1.5707963f);
+                    activity *= 0.38f + 0.62f * orbit * orbit;
+                } else if (task.status == model::Status::NeedsInput) {
+                    const float attention = 0.5f + 0.5f * std::sin(input.phase * 4.8f);
+                    activity *= 0.52f + 0.48f * attention;
+                } else if (task.status == model::Status::Done && task.unseen_done) {
+                    float cycle = std::fmod(input.phase + slot * 0.17f, 2.4f);
+                    if (cycle < 0.f) cycle += 2.4f;
+                    const float sparkle = cycle < 0.42f
+                        ? std::sin(cycle * 3.1415927f / 0.42f) : 0.f;
+                    const bool sparkle_diagonal = local_x == local_y;
+                    activity *= 0.62f + sparkle * (sparkle_diagonal ? 0.38f : 0.10f);
+                } else if (task.status == model::Status::Done) {
+                    activity *= 0.68f;
+                } else if (task.status == model::Status::Error) {
+                    // Alternate the two diagonals. The other pair stays black,
+                    // retaining the LCD's red-mark-on-dark error semantics.
+                    const bool first_diagonal = std::sin(input.phase * 5.f + slot) >= 0.f;
+                    const bool lit = first_diagonal ? local_x == local_y
+                                                    : local_x + local_y == 1;
+                    colour = lit ? status_foreground(model::Status::Error) : Rgb{};
                 }
                 frame[logical_index(x, y)] = mix(Rgb{}, colour, activity);
             }
+        }
+    }
+
+    if (travel.active && travel.from >= 0 && travel.from < kSlotCount
+        && travel.to >= 0 && travel.to < kSlotCount && travel.from != travel.to
+        && input.slots[travel.from].present && input.slots[travel.to].present) {
+        const DistanceMap from = field_distances_from(travel.from);
+        const DistanceMap to = field_distances_from(travel.to);
+        int shortest = kPixelCount;
+        for (int pixel = 0; pixel < kPixelCount; ++pixel) {
+            if (from[pixel] >= 0 && to[pixel] >= 0)
+                shortest = std::min(shortest, from[pixel] + to[pixel]);
+        }
+        const Rgb destination = slot_accent(input.slots[travel.to]);
+        const float position = motion::ease_in_out_cubic(travel.progress)
+                             * static_cast<float>(std::max(1, shortest));
+        for (int pixel = 0; pixel < kPixelCount; ++pixel) {
+            if (from[pixel] < 0 || to[pixel] < 0
+                || from[pixel] + to[pixel] != shortest) continue;
+            const float distance = std::fabs(static_cast<float>(from[pixel]) - position);
+            const float glow = motion::clamp01(1.f - distance / 1.35f);
+            frame[pixel] = mix(frame[pixel], mix(Rgb{}, destination, 0.78f), glow);
         }
     }
 

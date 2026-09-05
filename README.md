@@ -174,10 +174,13 @@ GPIO2. One matrix is supported; the Puzzle output socket is not used.
 The 8x8 matrix lays slots 1-3 across the top and slots 4-6 across the bottom.
 Each task is a true 2x2 square. The columns and rows between the six square
 islands, plus the top and bottom edges, form a dim field in the selected task's
-status colour and breathe with it, so none of the unavoidable spare LEDs become
-dark gutters. Unassigned task squares are off. Running is blue, input-needed is orange,
-completed-unread is green, completed-viewed is light grey, idle is a dim
-neutral, and error is a red mark on black. The selected block breathes gently.
+status colour, so none of the unavoidable spare LEDs become dark gutters. The
+field itself stays still; only the selected square breathes.
+Unassigned task squares are off. Running is an orbiting electric-blue corner,
+input-needed pulses amber-orange, completed-unread gives a short green sparkle,
+completed-viewed is static cool grey, idle is a dim warm neutral, and error
+alternates two red diagonals on black. Selection changes send a 220 ms light
+pulse through the field from the previous square to the new one.
 When the LCD plays a status takeover, the corresponding block expands to the
 whole matrix and shows its centred 4x6 slot number on the same timeline. While the LCD
 is in a menu, queued status events wait and the Puzzle continues to show the

@@ -22,6 +22,7 @@ namespace puzzle_unit {
 namespace {
 
 constexpr uint32_t kFrameIntervalMs = 33;  // 30 fps ceiling
+constexpr uint32_t kSelectionTravelMs = 220;
 
 #if CONFIG_CODEX_PUZZLE_ENABLED
 led_strip_handle_t strip = nullptr;
@@ -30,6 +31,10 @@ bool frame_valid = false;
 bool refresh_error_reported = false;
 puzzle_renderer::Frame previous_frame{};
 uint32_t last_frame_ms = 0;
+int observed_selection = -1;
+int travel_from = -1;
+uint32_t travel_started_ms = 0;
+bool selection_observed = false;
 
 constexpr puzzle_renderer::Rotation configured_rotation()
 {
@@ -177,6 +182,26 @@ void service()
         input.slots[i].present = task.present;
         input.slots[i].status = task.status;
         input.slots[i].unseen_done = task.unseen_done;
+    }
+    if (!input.linked) {
+        selection_observed = false;
+        travel_from = -1;
+    } else if (!selection_observed) {
+        observed_selection = input.selected;
+        selection_observed = true;
+    } else if (input.selected != observed_selection) {
+        travel_from = observed_selection;
+        observed_selection = input.selected;
+        travel_started_ms = now;
+    }
+    if (travel_from >= 0 && now - travel_started_ms < kSelectionTravelMs) {
+        input.selection_travel.active = true;
+        input.selection_travel.from = travel_from;
+        input.selection_travel.to = input.selected;
+        input.selection_travel.progress = static_cast<float>(now - travel_started_ms)
+                                        / kSelectionTravelMs;
+    } else {
+        travel_from = -1;
     }
     const ui::StatusTakeoverSnapshot takeover = ui::status_takeover_snapshot();
     input.takeover.active = takeover.active;
