@@ -77,19 +77,33 @@ void physical_mapping_is_a_permutation()
           "270-degree rotation moves the logical origin counter-clockwise");
 }
 
-void grid_has_six_equal_tiles_and_dark_gutters()
+void grid_has_a_frame_and_six_equal_contiguous_tiles()
 {
+    static constexpr puzzle_renderer::Bounds expected[6] = {
+        {1, 1, 2, 3}, {3, 1, 2, 3}, {5, 1, 2, 3},
+        {1, 4, 2, 3}, {3, 4, 2, 3}, {5, 4, 2, 3},
+    };
+    for (int slot = 0; slot < 6; ++slot) {
+        const auto actual = puzzle_renderer::slot_bounds(slot);
+        check(actual.x == expected[slot].x && actual.y == expected[slot].y
+                  && actual.w == expected[slot].w && actual.h == expected[slot].h,
+              "six equal slot bounds are exact");
+    }
     const auto frame = puzzle_renderer::render(deck_input());
     int lit = 0;
     for (int y = 0; y < 8; ++y) {
         for (int x = 0; x < 8; ++x) {
-            const bool gutter = x == 2 || x == 5 || y == 3 || y == 4;
             const bool is_lit = !dark(frame[puzzle_renderer::logical_index(x, y)]);
-            check(gutter ? !is_lit : is_lit, "3x2 grid mask is exact");
+            check(is_lit, "frame and contiguous deck have no dark holes");
             if (is_lit) ++lit;
         }
     }
-    check(lit == 36, "six 2x3 tiles light exactly 36 pixels");
+    check(lit == 64, "frame and six slots cover all 64 pixels");
+    const auto border = frame[puzzle_renderer::logical_index(0, 0)];
+    const auto slot = frame[puzzle_renderer::logical_index(1, 1)];
+    check(border.b > border.r * 3 && border.b > border.g * 2,
+          "outer frame carries the selected running colour");
+    check(slot.b > border.b, "status slots remain distinct from the quiet frame");
 }
 
 void statuses_and_selection_preserve_semantics()
@@ -119,12 +133,12 @@ void statuses_and_selection_preserve_semantics()
     input.slots[4].status = model::Status::Error;
     input.slots[5].present = false;
     const auto frame = puzzle_renderer::render(input);
-    const auto idle = frame[puzzle_renderer::logical_index(0, 0)];
-    const auto attention = frame[puzzle_renderer::logical_index(3, 0)];
-    const auto unseen = frame[puzzle_renderer::logical_index(6, 0)];
-    const auto viewed = frame[puzzle_renderer::logical_index(0, 5)];
-    const auto error_edge = frame[puzzle_renderer::logical_index(3, 5)];
-    const auto error_mark = frame[puzzle_renderer::logical_index(3, 6)];
+    const auto idle = frame[puzzle_renderer::logical_index(1, 1)];
+    const auto attention = frame[puzzle_renderer::logical_index(3, 1)];
+    const auto unseen = frame[puzzle_renderer::logical_index(5, 1)];
+    const auto viewed = frame[puzzle_renderer::logical_index(1, 4)];
+    const auto error_edge = frame[puzzle_renderer::logical_index(3, 4)];
+    const auto error_mark = frame[puzzle_renderer::logical_index(3, 5)];
     check(idle.r >= idle.b && idle.r > 0, "idle is a dim warm neutral");
     check(idle.r < unseen.g, "idle is visibly dimmer than active status colour");
     check(attention.r > attention.g * 2, "attention is orange-red");
@@ -132,7 +146,7 @@ void statuses_and_selection_preserve_semantics()
     check(std::abs(static_cast<int>(viewed.r) - viewed.g) <= 1,
           "viewed completion is neutral");
     check(dark(error_edge) && error_mark.r > 0, "error is a red mark on black");
-    check(dark(frame[puzzle_renderer::logical_index(6, 5)]), "unbound slot is off");
+    check(dark(frame[puzzle_renderer::logical_index(5, 4)]), "unbound slot is off");
 }
 
 void brightness_is_bounded_and_zero_is_black()
@@ -158,13 +172,19 @@ void selected_tile_breathes_without_changing_hue()
     auto input = deck_input();
     input.slots[0].status = model::Status::NeedsInput;
     input.phase = -0.7853982f;
-    const auto low = puzzle_renderer::render(input)[0];
+    const auto low_frame = puzzle_renderer::render(input);
+    const auto low = low_frame[puzzle_renderer::logical_index(1, 1)];
+    const auto low_border = low_frame[puzzle_renderer::logical_index(0, 0)];
     input.phase = 0.7853982f;
-    const auto high = puzzle_renderer::render(input)[0];
+    const auto high_frame = puzzle_renderer::render(input);
+    const auto high = high_frame[puzzle_renderer::logical_index(1, 1)];
+    const auto high_border = high_frame[puzzle_renderer::logical_index(0, 0)];
     check(high.r > low.r && high.g >= low.g && high.b >= low.b,
           "selected tile changes luminance across its breath");
     check(static_cast<int>(high.r) - low.r >= 8,
           "selection breath remains visible after the ten-percent output cap");
+    check(static_cast<int>(high_border.r) - low_border.r >= 5,
+          "selected status frame breath remains visible after the output cap");
     check(std::abs(high.r * low.g - low.r * high.g) <= 30,
           "selection breath retains the status hue");
 }
@@ -191,7 +211,7 @@ void takeover_expands_holds_a_number_and_returns()
     const auto digit = hold[puzzle_renderer::logical_index(4, 1)];
     const auto background = hold[puzzle_renderer::logical_index(7, 0)];
     dark_digit_pixels += digit != background;
-    check(start_lit == 36, "takeover waits through the rail-out bookend");
+    check(start_lit == 64, "takeover waits through the rail-out bookend");
     check(hold_lit == 64, "takeover hold covers all 64 pixels");
     check(dark_digit_pixels == 1, "takeover hold draws the slot numeral");
 
@@ -260,7 +280,7 @@ void viewed_completion_fades_toward_neutral()
 int main()
 {
     physical_mapping_is_a_permutation();
-    grid_has_six_equal_tiles_and_dark_gutters();
+    grid_has_a_frame_and_six_equal_contiguous_tiles();
     statuses_and_selection_preserve_semantics();
     brightness_is_bounded_and_zero_is_black();
     selected_tile_breathes_without_changing_hue();

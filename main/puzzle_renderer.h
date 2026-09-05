@@ -73,9 +73,9 @@ struct Bounds {
 
 constexpr Bounds slot_bounds(int slot)
 {
-    // Two 2x3 rows, with one dark column between neighbours and two dark
-    // rows through the middle. Every slot therefore has identical area.
-    return Bounds{(slot % 3) * 3, (slot / 3) * 5, 2, 3};
+    // A one-pixel outer frame leaves a 6x6 interior, which divides exactly
+    // into six identical, contiguous 2x3 slots.
+    return Bounds{1 + (slot % 3) * 2, 1 + (slot / 3) * 3, 2, 3};
 }
 
 constexpr std::size_t logical_index(int x, int y)
@@ -178,6 +178,27 @@ inline Frame render(const Input& input)
     Frame frame{};
     if (!input.linked || input.brightness <= 0.f) return frame;
 
+    const float breath = 0.5f + 0.5f * std::sin(input.phase * 2.f);
+    Rgb border_colour = status_colour(model::Status::Idle, false);
+    float border_activity = 0.18f;
+    if (input.selected >= 0 && input.selected < kSlotCount
+        && input.slots[input.selected].present) {
+        const Slot& selected_slot = input.slots[input.selected];
+        border_colour = selected_slot.status == model::Status::Error
+            ? status_foreground(model::Status::Error)
+            : status_colour(selected_slot.status, selected_slot.unseen_done);
+        border_activity = 0.22f + 0.28f * breath;
+    }
+    // The perimeter carries the selected status colour and breathes with its
+    // tile, making selection readable without changing any slot geometry.
+    const Rgb border = mix(Rgb{}, border_colour, border_activity);
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            if (x == 0 || x == kWidth - 1 || y == 0 || y == kHeight - 1)
+                frame[logical_index(x, y)] = border;
+        }
+    }
+
     for (int slot = 0; slot < kSlotCount; ++slot) {
         const Slot& task = input.slots[slot];
         if (!task.present) continue;
@@ -185,7 +206,6 @@ inline Frame render(const Input& input)
         // The panel is safety-capped at ten percent, so a subtle modulation
         // disappears into 8-bit quantisation.  Give the selected tile a broad
         // but still smooth luminance range while preserving its status hue.
-        const float breath = 0.5f + 0.5f * std::sin(input.phase * 2.f);
         const float selected = slot == input.selected
             ? 0.55f + 0.45f * breath
             : 0.82f;
