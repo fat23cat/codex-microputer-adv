@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.1 — 2026-09-05
+
+- Reduced the Puzzle takeover's full-panel status surface to 20% of its former
+  intensity while keeping its 4x6 numeral bright, and softened the normal task
+  deck slightly by changing the build-time default from 10% to 9%. The
+  independent 10% hardware safety ceiling remains unchanged. The low-level
+  completion takeover uses a dedicated pure green source so WS2812E
+  quantization does not shift it toward cyan. The selected-status field stays
+  at 14% activity so unselected task pixels remain distinct at their dimmest
+  animation phase.
+
 ## 0.11.0 — 2026-09-05
 
 - Added an optional M5Stack Puzzle Unit 8x8 mirror for the six Codex task

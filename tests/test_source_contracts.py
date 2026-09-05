@@ -551,6 +551,10 @@ require("main/puzzle_unit.cpp",
         "Puzzle failure shutdown must clear latched LEDs before deleting the driver")
 require("main/puzzle_renderer.h", r"kSafetyBrightnessCeiling\s*=\s*0\.10f",
         "Puzzle renderer must retain the independent ten-percent safety cap")
+require("main/puzzle_renderer.h", r"kFieldActivity\s*=\s*0\.14f",
+        "Puzzle background field must stay below dim unselected task pixels")
+require("main/puzzle_renderer.h", r"kTakeoverSurfaceActivity\s*=\s*0\.20f",
+        "Puzzle full-panel takeover must stay dimmer than the sparse task deck")
 require("main/puzzle_renderer.h",
         r"\(kHeight - 1 - panel_y\) \+ panel_x \* kHeight",
         "Puzzle wire mapping must remain isolated from logical rendering")
@@ -560,6 +564,11 @@ require("main/Kconfig.projbuild",
         r"config CODEX_PUZZLE_ENABLED[\s\S]{0,100}default y[\s\S]{0,500}"
         r"config CODEX_PUZZLE_GPIO[\s\S]{0,100}default 2",
         "this fork must enable one GPIO2 Puzzle Unit by default")
+require("main/Kconfig.projbuild",
+        r"config CODEX_PUZZLE_MAX_BRIGHTNESS_PERCENT[\s\S]{0,120}default 9",
+        "the Puzzle build default must keep the normal deck slightly softened")
+require("sdkconfig", r"CONFIG_CODEX_PUZZLE_MAX_BRIGHTNESS_PERCENT=9",
+        "the checked-in firmware configuration must use the softened Puzzle default")
 
 require("main/codex_micro_protocol.cpp", r"rpc_framer::Assembler usb_input;[\s\S]{0,120}rpc_framer::Assembler ble_input;", "USB and BLE must not share partial RPC state")
 require("main/codex_micro_protocol.cpp", r"xQueueCreateStatic[\s\S]{0,1200}xQueueReceive", "protocol callbacks must hand reports to main task")

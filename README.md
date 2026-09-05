@@ -183,15 +183,16 @@ completed-viewed is static cool grey, idle is a dim warm neutral, and error
 alternates two red diagonals on black. Selection changes send a 220 ms light
 pulse through the field from the previous square to the new one.
 When the LCD plays a status takeover, the corresponding block expands to the
-whole matrix and shows its centred 4x6 slot number on the same timeline. While the LCD
-is in a menu, queued status events wait and the Puzzle continues to show the
-task deck.
+whole matrix as a status-colour surface dimmed to 20% of the normal takeover
+fill and shows its bright centred 4x6 slot number on the same timeline. While
+the LCD is in a menu, queued status events wait and the Puzzle continues to
+show the task deck.
 
 The matrix follows the effective, debounced Codex backlight level. Sleep,
 backlight zero, or loss of the Codex session clears all 64 LEDs. Hardware
 updates are capped at 30 FPS and identical frames are not retransmitted. The
-default and hard renderer ceiling are 10% of full WS2812 brightness, matching
-M5Stack's continuous-use recommendation.
+default output ceiling is 9% of full WS2812 brightness; the independent hard
+renderer ceiling remains 10%, matching M5Stack's continuous-use recommendation.
 
 Build-time settings live under **Codex Microputer hardware** in `menuconfig`:
 `CONFIG_CODEX_PUZZLE_ENABLED`, `CONFIG_CODEX_PUZZLE_GPIO`, the 0/90/180/270

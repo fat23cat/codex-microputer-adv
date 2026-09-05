@@ -20,6 +20,8 @@ constexpr int kHeight = 8;
 constexpr int kPixelCount = kWidth * kHeight;
 constexpr int kSlotCount = 6;
 constexpr float kSafetyBrightnessCeiling = 0.10f;
+constexpr float kFieldActivity = 0.14f;
+constexpr float kTakeoverSurfaceActivity = 0.20f;
 
 struct Rgb {
     uint8_t r = 0;
@@ -172,6 +174,15 @@ inline Rgb status_foreground(model::Status status)
     return {};
 }
 
+inline Rgb takeover_surface_colour(model::Status status, bool unseen)
+{
+    // At the deliberately low 20% takeover activity, the deck's green
+    // palette quantizes to a muddy cyan on WS2812E. A pure source green
+    // survives the final 9% output scale as an unmistakable low-level green.
+    if (status == model::Status::Done && unseen) return {0, 255, 0};
+    return status_colour(status, unseen);
+}
+
 inline Rgb slot_accent(const Slot& slot)
 {
     return slot.status == model::Status::Error
@@ -259,11 +270,9 @@ inline Frame render(const Input& input)
 
     const SelectionTravel& travel = input.selection_travel;
     Rgb field_colour = status_colour(model::Status::Idle, false);
-    float field_activity = 0.14f;
     if (input.selected >= 0 && input.selected < kSlotCount
         && input.slots[input.selected].present) {
         field_colour = slot_accent(input.slots[input.selected]);
-        field_activity = 0.24f;
     }
     if (travel.active && travel.from >= 0 && travel.from < kSlotCount
         && travel.to >= 0 && travel.to < kSlotCount
@@ -275,7 +284,7 @@ inline Frame render(const Input& input)
     // Every pixel outside the six square islands carries the selected status
     // colour. It is intentionally static, so the unavoidable 8x8 remainder
     // supports focus instead of competing with the task microanimations.
-    const Rgb field = mix(Rgb{}, field_colour, field_activity);
+    const Rgb field = mix(Rgb{}, field_colour, kFieldActivity);
     frame.fill(field);
 
     for (int slot = 0; slot < kSlotCount; ++slot) {
@@ -388,10 +397,14 @@ inline Frame render(const Input& input)
                     (age - return_start) / status_timing::returning);
             }
 
-            Rgb surface = status_colour(takeover.status, takeover.unseen);
+            Rgb surface = takeover_surface_colour(takeover.status, takeover.unseen);
             if (takeover.status == model::Status::Done && takeover.viewed_progress > 0.f)
                 surface = mix(surface, status_colour(model::Status::Done, false),
                               takeover.viewed_progress);
+            // A full 8x8 surface has far more apparent output than the sparse
+            // task deck. Keep its status hue but lower the fill intensity;
+            // the numeral remains at full contrast above it.
+            surface = mix(Rgb{}, surface, kTakeoverSurfaceActivity);
             const Bounds source = slot_bounds(takeover.slot);
             for (int y = 0; y < kHeight; ++y) {
                 for (int x = 0; x < kWidth; ++x) {
