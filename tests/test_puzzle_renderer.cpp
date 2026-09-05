@@ -124,6 +124,14 @@ void grid_has_six_square_islands_on_a_lit_status_field()
     check(field.b > field.r * 3 && field.b >= field.g * 2,
           "background field carries the selected running colour");
     check(slot.b > field.b, "status islands remain distinct from the quiet field");
+
+    auto low_contrast = deck_input();
+    low_contrast.phase = 0.7853982f;
+    const auto quiet = puzzle_renderer::render(low_contrast);
+    const auto quiet_field = quiet[puzzle_renderer::logical_index(2, 1)];
+    const auto dim_peer = quiet[puzzle_renderer::logical_index(3, 1)];
+    check(dim_peer.b >= quiet_field.b + 2,
+          "an unselected slot stays distinct even at its dim animation phase");
 }
 
 void statuses_and_selection_preserve_semantics()
@@ -330,6 +338,10 @@ void takeover_expands_holds_a_number_and_returns()
     check(start_lit == 64, "takeover waits through the rail-out bookend");
     check(hold_lit == 64, "takeover hold covers all 64 pixels");
     check(dark_digit_pixels == 1, "takeover hold draws the slot numeral");
+    check(background.r <= 5 && background.g <= 3,
+          "takeover dims its full-panel surface independently of the deck");
+    check(digit.r >= background.r + 10 && digit.g >= background.g + 10,
+          "takeover numeral stays bright above the dimmed surface");
 
     input.takeover.age = status_timing::rail_out + status_timing::colour
                        + status_timing::expand * 0.5f;
@@ -387,7 +399,8 @@ void viewed_completion_fades_toward_neutral()
     const auto green = puzzle_renderer::render(input)[puzzle_renderer::logical_index(7, 7)];
     input.takeover.viewed_progress = 1.f;
     const auto grey = puzzle_renderer::render(input)[puzzle_renderer::logical_index(7, 7)];
-    check(green.g > green.r * 3, "fresh completion takeover begins green");
+    check(green.r == 0 && green.g >= 4 && green.b == 0,
+          "fresh completion takeover remains pure green after low-level scaling");
     check(std::abs(static_cast<int>(grey.r) - grey.g) <= 1,
           "viewed completion takeover reaches neutral");
 }
