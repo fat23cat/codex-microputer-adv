@@ -256,19 +256,21 @@ inline Frame render(const Input& input)
                 }
             }
 
-            static constexpr uint8_t digits[kSlotCount][5] = {
-                {0b010, 0b110, 0b010, 0b010, 0b111},
-                {0b110, 0b001, 0b010, 0b100, 0b111},
-                {0b110, 0b001, 0b010, 0b001, 0b110},
-                {0b101, 0b101, 0b111, 0b001, 0b001},
-                {0b111, 0b100, 0b110, 0b001, 0b110},
-                {0b011, 0b100, 0b111, 0b101, 0b111},
+            // A 4x6 cell centres exactly on the even 8x8 panel: two columns
+            // of margin on each side and one row above and below.
+            static constexpr uint8_t digits[kSlotCount][6] = {
+                {0b0110, 0b1110, 0b0110, 0b0110, 0b0110, 0b1111},
+                {0b0110, 0b1001, 0b0001, 0b0010, 0b0100, 0b1111},
+                {0b1110, 0b0001, 0b0110, 0b0001, 0b0001, 0b1110},
+                {0b1001, 0b1001, 0b1111, 0b0001, 0b0001, 0b0001},
+                {0b1111, 0b1000, 0b1110, 0b0001, 0b0001, 0b1110},
+                {0b0111, 0b1000, 0b1110, 0b1001, 0b1001, 0b0110},
             };
             const Rgb foreground = status_foreground(takeover.status);
-            for (int row = 0; row < 5; ++row) {
-                for (int col = 0; col < 3; ++col) {
-                    if ((digits[takeover.slot][row] & (1u << (2 - col))) == 0) continue;
-                    const std::size_t pixel = logical_index(3 + col, 1 + row);
+            for (int row = 0; row < 6; ++row) {
+                for (int col = 0; col < 4; ++col) {
+                    if ((digits[takeover.slot][row] & (1u << (3 - col))) == 0) continue;
+                    const std::size_t pixel = logical_index(2 + col, 1 + row);
                     frame[pixel] = mix(frame[pixel], foreground, numeral);
                 }
             }

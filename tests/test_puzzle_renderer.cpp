@@ -212,13 +212,13 @@ void takeover_expands_holds_a_number_and_returns()
 
 void takeover_draws_exact_digits_one_through_six()
 {
-    static constexpr uint8_t digits[6][5] = {
-        {0b010, 0b110, 0b010, 0b010, 0b111},
-        {0b110, 0b001, 0b010, 0b100, 0b111},
-        {0b110, 0b001, 0b010, 0b001, 0b110},
-        {0b101, 0b101, 0b111, 0b001, 0b001},
-        {0b111, 0b100, 0b110, 0b001, 0b110},
-        {0b011, 0b100, 0b111, 0b101, 0b111},
+    static constexpr uint8_t digits[6][6] = {
+        {0b0110, 0b1110, 0b0110, 0b0110, 0b0110, 0b1111},
+        {0b0110, 0b1001, 0b0001, 0b0010, 0b0100, 0b1111},
+        {0b1110, 0b0001, 0b0110, 0b0001, 0b0001, 0b1110},
+        {0b1001, 0b1001, 0b1111, 0b0001, 0b0001, 0b0001},
+        {0b1111, 0b1000, 0b1110, 0b0001, 0b0001, 0b1110},
+        {0b0111, 0b1000, 0b1110, 0b1001, 0b1001, 0b0110},
     };
     for (int slot = 0; slot < 6; ++slot) {
         auto input = deck_input();
@@ -228,12 +228,12 @@ void takeover_draws_exact_digits_one_through_six()
         input.takeover.age = status_timing::rail_out + status_timing::hold_start + 0.1f;
         const auto frame = puzzle_renderer::render(input);
         const auto surface = frame[puzzle_renderer::logical_index(7, 7)];
-        for (int row = 0; row < 5; ++row) {
-            for (int col = 0; col < 3; ++col) {
-                const bool expected = (digits[slot][row] & (1u << (2 - col))) != 0;
-                const auto pixel = frame[puzzle_renderer::logical_index(3 + col, 1 + row)];
+        for (int row = 0; row < 6; ++row) {
+            for (int col = 0; col < 4; ++col) {
+                const bool expected = (digits[slot][row] & (1u << (3 - col))) != 0;
+                const auto pixel = frame[puzzle_renderer::logical_index(2 + col, 1 + row)];
                 check((pixel != surface) == expected,
-                      "each takeover numeral has its exact 3x5 mask");
+                      "each takeover numeral has its exact centred 4x6 mask");
             }
         }
     }
