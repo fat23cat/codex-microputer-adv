@@ -947,7 +947,6 @@ void handle_line(char* line)
     if (!line || !*line)
         return;
     service_staged_timeout();
-    ui::wake();
 
     if (std::strcmp(line, "PING") == 0) {
         sendf("CCP_PONG|%s\n", firmware_version());
@@ -961,6 +960,12 @@ void handle_line(char* line)
         enable_m5apps_autostart();
         return;
     }
+    // A live Codex Micro session owns the deck and Auto-dim. The leftover USB
+    // companion bridge polls DECK/TASK every two seconds; treating that as
+    // activity slammed the backlight awake and made the panel blink.
+    if (codex_micro::active_transport() != codex_micro::Transport::None)
+        return;
+    ui::wake();
     if (std::strncmp(line, "HOST|", 5) == 0) {
         // A new host session owns the deck from scratch. Discarding any
         // pending diagnostic batch here keeps a stale partial batch from
