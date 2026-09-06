@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.2 — 2026-09-07
+
+- Ignore USB diagnostic DECK/TASK traffic while a native Codex Micro session is
+  alive, so stale serial companion polling cannot wake the display and prevent
+  Auto-dim from holding.
+- Publish `Codex.bin` and its SHA-256 checksum automatically when a GitHub
+  release is published, after the public-tree audit, host tests, and full
+  firmware build pass for the exact release tag.
+
 ## 0.11.1 — 2026-09-05
 
 - Reduced the Puzzle takeover's full-panel status surface to 20% of its former

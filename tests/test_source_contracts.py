@@ -482,6 +482,9 @@ require("main/ui.cpp",
 require("main/ui.cpp",
         r"now - lighting_changed_ms >= kDimHoldMs[\s\S]{0,180}configured / 10",
         "host auto-dim must use the same three-minute readable hold")
+require("main/main.cpp",
+        r"void handle_line\([\s\S]{0,1200}active_transport\(\) != codex_micro::Transport::None[\s\S]{0,80}return;[\s\S]{0,40}ui::wake\(\)",
+        "USB diagnostic traffic must not wake Auto-dim during a live native session")
 
 require("main/theme.h", r"kOrdinal\s*=\s*rgb\(171,\s*168,\s*157\)",
         "row ordinals must use their own tone between rule and label type")
