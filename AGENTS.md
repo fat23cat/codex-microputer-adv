@@ -26,6 +26,14 @@
   read back via `esp_app_get_description()->version`; bump together with
   `CHANGELOG.md`.
 
+## CRUB distribution
+
+- The sibling `cardputer-firmware-manager` repository owns the deployable
+  shared partition layout and SD staging contract.
+- Use its `doctor`, `local --app codex`, and `release --app codex` commands for
+  installation validation. Do not duplicate the shared layout here or bypass
+  the manager before CRUB's `upcodex` command.
+
 ## Repo conventions
 
 - `tests/test_source_contracts.py` greps sources with regexes; when moving or

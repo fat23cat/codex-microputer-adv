@@ -22,7 +22,7 @@ bool companion_ble_send(const char* data, size_t length);
 
 // Number of hosts this device has bonded with.
 int companion_ble_bond_count(void);
-// Erases only this app's BLE security material, preserving M5Apps and local
+// Erases only this app's BLE security material, preserving loader and local
 // Codex preferences. The caller must explicitly confirm this destructive step.
 esp_err_t companion_ble_forget_bonds(void);
 bool companion_ble_select_profile(uint8_t profile);

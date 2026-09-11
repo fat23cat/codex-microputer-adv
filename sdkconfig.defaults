@@ -9,9 +9,9 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 
-# Reference layout only, so the app-size check validates against a realistic
-# slot instead of the 1 MB single-app default. M5Apps owns the real partition
-# table on the device and this generated one is never flashed.
+# Reference subset only, so the app-size check validates against the 2 MiB
+# `codex` slot in the shared crub layout. The loader owns the full partition
+# table on the device and this generated subset is never flashed.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-reference.csv"
 
@@ -27,7 +27,8 @@ CONFIG_BT_NIMBLE_SVC_DIS_SERIAL_NUMBER=y
 CONFIG_BT_NIMBLE_SVC_DIS_PNP_ID=y
 CONFIG_BT_CONTROLLER_ENABLED=y
 # Bonding is persisted by this app into the loader-owned NVS partition (the
-# runtime prefers `apps_nvs` and falls back to any DATA/NVS partition),
+# runtime prefers the dedicated `apps_nvs` partition and falls back to any
+# DATA/NVS partition),
 # not by NimBLE's built-in persistence.
 CONFIG_BT_NIMBLE_NVS_PERSIST=n
 CONFIG_BT_NIMBLE_SM_LEGACY=y

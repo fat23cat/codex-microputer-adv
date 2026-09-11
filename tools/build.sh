@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the companion and stage the M5Apps-installable artifact in dist/.
+# Build the companion and stage the loader-installable raw app image in dist/.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -13,9 +13,8 @@ cd "$PROJECT"
 idf.py build
 
 mkdir -p dist
-# The filename becomes the partition label and the launcher entry, so it is
-# part of the deliverable, not an incidental detail.
+# The stable filename is part of the SD update contract.
 cp build/codex_microputer_adv.bin dist/Codex.bin
 
 printf '\ndist/Codex.bin  %s bytes\n' "$(wc -c < dist/Codex.bin | tr -d ' ')"
-printf 'Copy it to the SD card and install with M5Apps: Installer -> SD card -> Codex.bin\n'
+printf 'Copy it to /firmware/Codex.bin and install with crub: flash /firmware/Codex.bin codex\n'

@@ -1,13 +1,10 @@
-# Reference layout for the build-time app-size check ONLY. This file is never
-# flashed: on the device, M5Apps owns the partition table and its Installer
-# creates the app partition, sized to the image it is given.
-#
-# The first four entries mirror M5Apps' own partitions.csv. `codex_app` stands
-# in for the ota_x slot the Installer allocates, so the build fails early if the
-# image outgrows what comfortably fits in the free flash M5Apps has left.
+# Build-time subset of the shared crub layout. It retains the exact Codex app
+# and persistence addresses needed for size validation, but is never a
+# deployable device table. The loader owns the full table; Cardputer Firmware
+# Manager owns its source at layouts/cardputer-adv-8mb.csv.
 # Name, Type, SubType, Offset, Size, Flags
-phy_init,data,phy,0x9000,0x1000,
-apps_nvs,data,nvs,0xa000,0x4000,
-apps_ota,data,ota,0xe000,0x2000,
-apps_app,app,factory,0x10000,0x170000,
-codex_app,app,ota_0,0x180000,0x180000,
+nvs,data,nvs,0x9000,0x5000,
+otadata,data,ota,0xe000,0x2000,
+codex,app,ota_1,0x350000,0x200000,
+apps_nvs,data,nvs,0x550000,0x10000,
+hub_config,data,nvs,0x560000,0x10000,

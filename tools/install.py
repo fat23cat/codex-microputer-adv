@@ -19,6 +19,7 @@ HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
 DEFAULT_IMAGE = PROJECT / "dist" / "Codex.bin"
 BUILD_IMAGE = PROJECT / "build" / "codex_microputer_adv.bin"
+DEFAULT_PARTITION_LABEL = "codex"
 SUBTYPE_NAMES = {
     (TYPE_DATA, 1): "phy",
     (TYPE_DATA, 2): "nvs",
@@ -149,6 +150,10 @@ def validate_label(label):
     return label if len(label) <= 15 else label[:14] + ">"
 
 
+def resolve_partition_label(explicit_label):
+    return validate_label(explicit_label or DEFAULT_PARTITION_LABEL)
+
+
 def validate_partitions(parts):
     seen = set()
     end = PARTITION_TABLE_OFFSET + PARTITION_TABLE_SIZE
@@ -249,7 +254,7 @@ def verify_image(port, target, image):
         "--before",
         "default_reset",
         "--after",
-        "no_reset",
+        "hard_reset",
         "verify_flash",
         "--flash_mode",
         "dio",
@@ -292,29 +297,6 @@ def write_image(port, target, image, baud, attempts=3):
             print(f"flash write interrupted; retrying ({attempt}/{attempts})")
 
 
-def select_ota(port, label, baud):
-    idf = os.environ.get("IDF_PATH")
-    if not idf:
-        raise SystemExit("IDF_PATH is not set")
-    r = subprocess.run(
-        [
-            sys.executable,
-            str(Path(idf) / "components/app_update/otatool.py"),
-            "--port",
-            port,
-            "--baud",
-            baud,
-            "switch_ota_partition",
-            "--name",
-            label,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if r.returncode:
-        raise SystemExit("failed to select OTA partition")
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -337,7 +319,7 @@ def main():
         and file_sha256(image) != file_sha256(BUILD_IMAGE)
     ):
         raise SystemExit("dist/Codex.bin is stale")
-    label = validate_label(a.label or image.stem)
+    label = resolve_partition_label(a.label)
     size = image.stat().st_size
     aligned = (size + APP_ALIGN - 1) & ~(APP_ALIGN - 1)
     original, parts = read_partition_table(a.port)
@@ -385,8 +367,8 @@ def main():
         )
     write_image(a.port, target, image, a.baud)
     verify_image(a.port, target, image)
-    select_ota(a.port, label, "115200")
-    print(f"installed and launched {label!r}")
+    print(f"installed {label!r}; CRUB launcher is active")
+    print(f"run 'launch -f {label}' in CRUB to start it")
 
 
 if __name__ == "__main__":
