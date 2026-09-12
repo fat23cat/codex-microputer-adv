@@ -37,8 +37,9 @@ Wi-Fi connection, or background script is required.
 - Stores three independent BLE host profiles and reconnects automatically.
 - Mirrors Codex Micro brightness and auto-dim settings, reports battery state,
   and keeps local sound preferences on the device.
-- Runs as an application inside [M5Apps](https://github.com/d4rkmen/M5Apps),
-  preserving the launcher and other installed Cardputer tools.
+- Runs as an application inside [crub](https://github.com/wisnc/crub), with the
+  shared layout and updates managed by
+  [Cardputer Firmware Manager](https://github.com/fat23cat/cardputer-firmware-manager).
 
 The primary and release-tested target is **M5Stack Cardputer ADV**. The source
 contains a scanner for the original Cardputer keyboard, but that hardware is
@@ -67,9 +68,9 @@ update may require corresponding firmware changes.
   an 8 MB flash chip.
 - Optional: one [M5Stack Puzzle Unit](https://docs.m5stack.com/en/unit/Unit-Puzzle)
   and its standard Grove cable.
-- A microSD card for the first M5Apps installation, or a USB cable for the
-  development installer.
-- [M5Apps](https://github.com/d4rkmen/M5Apps) installed on the device.
+- A microSD card containing `crub` and the shared layout from
+  [Cardputer Firmware Manager](https://github.com/fat23cat/cardputer-firmware-manager),
+  or a USB cable for the development installer.
 - A current Codex-capable desktop app with Codex Micro support.
 - macOS 14 or later for the currently tested host path.
 - For building: Git, Python 3, CMake/Ninja prerequisites required by ESP-IDF,
@@ -77,16 +78,35 @@ update may require corresponding firmware changes.
 
 ## Install a release build
 
-1. Install and boot M5Apps on the Cardputer ADV.
-2. Download `Codex.bin` from this repository's latest GitHub release.
-3. Copy `Codex.bin` to a FAT32 or exFAT microSD card.
-4. In M5Apps, open **Installer → SD card → Codex.bin**.
-5. Launch **Codex** from the M5Apps launcher.
+1. Install and boot `crub` using
+   [Cardputer Firmware Manager](https://github.com/fat23cat/cardputer-firmware-manager).
+2. Use its `release --app codex` command to download, verify, and copy
+   `Codex.bin` to a FAT32 microSD card.
+3. Safely eject the card, exit `usbsd`, and run `sd` so `crub` remounts the
+   card and reloads the staged aliases.
+4. Run `upcodex` and wait for `flash complete`.
+5. Run `codex`.
 6. On the computer, open Codex and connect the detected `Codex Micro ADV`
    device over USB or Bluetooth.
 
+For an already-built local image, start CRUB's `usbsd` mode and run from the
+sibling manager repository:
+
+```bash
+cd ../cardputer-firmware-manager
+python3 -m firmware_manager doctor
+python3 -m firmware_manager local --app codex --sd /Volumes/CARDPUTER
+```
+
+Safely eject the card, exit `usbsd`, and run `sd` before `upcodex`.
+
+The manager validates the raw ESP application descriptor, enforces the 2 MiB
+`codex` partition limit, updates checksums and aliases, and preserves the Hub
+image. Do not copy or flash an unvalidated `Codex.bin` directly.
+
 Do not flash `Codex.bin` at address `0x0`: it is an application image, not a
-complete device image. M5Apps owns the bootloader and partition table.
+complete device image. `crub` owns the bootloader and shared partition table.
+Use the physical Reset button to return to the `crub` launcher.
 
 ## Build from source
 
@@ -102,7 +122,18 @@ cd codex-microputer-adv
 ./tools/build.sh
 ```
 
-The M5Apps application image is written to `dist/Codex.bin`.
+The raw application image is written to `dist/Codex.bin`.
+
+Validate and stage that image for CRUB through Cardputer Firmware Manager:
+
+```bash
+cd ../cardputer-firmware-manager
+python3 -m firmware_manager local --app codex --build --sd /Volumes/CARDPUTER
+```
+
+The manager clears any inherited ESP-IDF environment before calling Codex's
+project-local `tools/build.sh`, so a Hub 5.5.5 environment cannot replace the
+pinned Codex 5.5.3 toolchain.
 
 If ESP-IDF and the M5Stack dependencies are already installed elsewhere, set
 `IDF_PATH`, `IDF_TOOLS_PATH`, and `M5CARDPUTER_DEMO_PATH` before sourcing
@@ -110,7 +141,7 @@ If ESP-IDF and the M5Stack dependencies are already installed elsewhere, set
 
 ## Install over USB during development
 
-After M5Apps has created the `Codex` app partition once:
+After the shared layout has created the lowercase `codex` app partition once:
 
 ```bash
 source tools/env.sh
@@ -119,10 +150,11 @@ source tools/env.sh
 ```
 
 The installer auto-detects `/dev/cu.usbmodem*`, verifies that the staged image
-matches the current build, writes only the existing `Codex` OTA partition,
-checks the flash digest, selects it through standard M5Apps OTA metadata, and
-launches it. Creating or resizing a partition requires the explicit
-`--create-partition` flag because that operation edits the partition table.
+matches the current build, writes only the existing `codex` OTA partition,
+checks the flash digest, and resets into the `crub` launcher. Run `launch -f
+codex` there to start the updated application. Creating or resizing a partition
+requires the explicit `--create-partition` flag because that operation edits
+the partition table.
 
 ## Controls
 
@@ -156,8 +188,8 @@ means completed and viewed, and pale grey means idle. A bottom rail marks the
 selected task. A status change expands its slot across the display, holds the
 state briefly, then returns without blocking input.
 
-User settings include volume, startup sound, startup composition, BLE host
-profile, and return to M5Apps. The default startup composition is `CLOUD` and
+User settings include volume, startup sound, startup composition, and BLE host
+profile. The default startup composition is `CLOUD` and
 the default 60% volume reproduces the original hardware output level 150.
 
 Option+Tab exposes status animation tests, ten startup compositions, a
@@ -209,14 +241,14 @@ not require pairing again. Signal strength is monitored and transmit power is
 adjusted dynamically.
 
 The firmware stores settings and BLE bonds in its own `codex_ccp2` namespace in
-the loader-owned NVS partition. It prefers M5Apps' `apps_nvs` label and safely
-falls back to a compatible partition discovered by the standard NVS subtype,
+the loader-owned NVS partition. It prefers the dedicated `apps_nvs` label and
+safely falls back to a compatible partition discovered by the standard NVS subtype,
 including the conventional `nvs` label. It never erases the partition and
 contains no credentials for Codex, GitHub, OpenAI, Wi-Fi, or any other service.
 
 If a saved Mac bond becomes unusable, open the hidden **Opt+Tab** debug menu,
 select **RESET BLE BONDS**, and press Enter twice. This removes only Codex
-Microputer's BLE keys and CCCD records; local preferences and other M5Apps data
+Microputer's BLE keys and CCCD records; local preferences and other loader data
 remain intact. Then remove `Codex Micro ADV` from macOS Bluetooth settings and
 pair again. Storage failures show their exact ESP-IDF error name on the device
 and in the USB diagnostic log.

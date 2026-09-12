@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- Documented isolated local builds through Cardputer Firmware Manager so Codex
+  keeps using its pinned ESP-IDF 5.5.3 toolchain beside Hub 5.5.5.
+- Made the USB installer target CRUB's lowercase `codex` partition by default.
+
+## 0.12.0 — 2026-09-11
+
+- Added a build-time reference for the shared `crub` multiboot layout, with a
+  dedicated 2 MiB application slot and loader-owned `apps_nvs` persistence.
+- Removed the M5Apps-specific return action, autostart metadata writes, and
+  factory-partition dependency. Physical Reset returns a `crub` installation
+  to its launcher.
+- Updated installation, storage, and interaction documentation for raw app-only
+  updates from microSD.
+- The USB development installer now resets into `crub` after digest
+  verification and reports the explicit launch command instead of claiming an
+  application launch after a hardware reset.
+
 ## 0.11.2 — 2026-09-07
 
 - Ignore USB diagnostic DECK/TASK traffic while a native Codex Micro session is

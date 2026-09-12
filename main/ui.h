@@ -13,7 +13,7 @@ namespace ui {
 enum class Screen : uint8_t { Boot, Deck, Settings, DebugSettings, Previews,
                               StatusDebug, ChimeLab, Help };
 
-enum class SettingsRow : uint8_t { BleProfile, Volume, StartupSound, Exit, Count };
+enum class SettingsRow : uint8_t { BleProfile, Volume, StartupSound, Count };
 enum class DebugSettingsRow : uint8_t {
     UsbHid, Previews, ChimeLab, StatusDebug, ResetBluetooth, Count
 };

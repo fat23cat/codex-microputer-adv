@@ -1286,7 +1286,6 @@ void draw_settings()
         {"HOST CHANNEL", ble_profile},
         {"VOLUME", volume},
         {"STARTUP CHIME", !s.startup_sound_on ? "OFF" : (s.sound_volume > 0 ? "ON" : "MUTED")},
-        {"RETURN TO M5APPS", "ENTER"},
     };
 
     const int list_top = 30;

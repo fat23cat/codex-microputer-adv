@@ -421,8 +421,10 @@ require("main/ui.cpp",
         r"const int right = weak_link \? kScreenW - kSignalStripW - 5 : 225;",
         "the critical battery readout must step aside for the annunciator")
 require("tools/install.py",
-        r"select_ota\(a\.port,\s*label,\s*\"115200\"\)[\s\S]{0,180}installed and launched",
-        "M5Apps installer must select and launch the flashed OTA app without a manual picker")
+        r"def verify_image[\s\S]{0,300}\"--after\",\s*\"hard_reset\"",
+        "USB installer must return to the crub launcher after verification")
+forbid("tools/install.py", r"switch_ota_partition|installed and launched",
+       "USB installation must not claim that a crub hardware reset launched the app")
 require("main/codex_micro_protocol.cpp",
         r"status_reducer::apply\(\s*task, frame, session\.baseline\(\)\)",
         "all status snapshots during control-plane bootstrap must be baseline-only")
@@ -591,7 +593,11 @@ require("main/store.cpp",
 require("main/storage_partition.h",
         r"ESP_PARTITION_SUBTYPE_DATA_NVS,\s*\"apps_nvs\"[\s\S]{0,220}"
         r"ESP_PARTITION_SUBTYPE_DATA_NVS,\s*nullptr",
-        "storage must prefer M5Apps' label and fall back by stable NVS subtype")
+        "storage must prefer the loader-owned apps_nvs label and fall back by stable NVS subtype")
+require("partitions-reference.csv", r"^codex,app,ota_1,0x350000,0x200000,",
+        "the build-time image check must use the shared crub codex slot")
+require("partitions-reference.csv", r"^apps_nvs,data,nvs,0x550000,0x10000,",
+        "Codex settings and BLE bonds must have a dedicated crub NVS partition")
 require("main/ble_store_apps_nvs.cpp", r"storage_partition::nvs_label\(\)",
         "BLE bonds must use the same runtime-discovered NVS partition as settings")
 require("main/store.cpp", r"settings_dirty = false[\s\S]{0,260}settings_dirty = true", "failed settings writes must remain dirty")
@@ -601,8 +607,12 @@ require("main/main.cpp", r"send_agent_key_to\(voice_gesture.transport[\s\S]{0,16
 require("main/link.cpp", r"discard_until_newline", "oversized diagnostic lines must be discarded through newline")
 forbid("main/ble_transport.h", r"companion_receive_line",
        "the BLE text-channel entry point must stay removed until a GATT text characteristic exists")
-require("main/main.cpp", r"store::flush\(\);\s*\n\s*vTaskDelay\(pdMS_TO_TICKS\(120\)\)",
-        "returning to M5Apps must flush debounced settings before reboot")
+forbid("main/ui.cpp", r"RETURN TO M5APPS",
+       "the local menu must not expose the removed M5Apps return action")
+forbid("main/main.cpp", r"return_to_m5apps|enable_m5apps_autostart|m5apps_autostart",
+       "the firmware must not mutate or transfer control to M5Apps")
+require("main/ui.h", r"enum class SettingsRow : uint8_t \{ BleProfile, Volume, StartupSound, Count \};",
+        "the local settings menu must contain only persistent in-app controls")
 require("tools/install.py", r"partition table backup[\s\S]{0,3000}verification failed", "partition edits must be backed up and verified")
 require("main/ui.cpp", r"strcmp\(scene, \"live\"\)[\s\S]{0,120}canvas\.getBuffer", "live screenshots must expose the current framebuffer without demo-state mutation")
 require(".github/workflows/host-tests.yml", r"SANITIZE[\s\S]{0,900}firmware-build", "CI must run sanitizers and firmware build")

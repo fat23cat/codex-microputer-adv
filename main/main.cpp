@@ -24,8 +24,6 @@
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_app_desc.h"
 #include "esp_err.h"
-#include "esp_ota_ops.h"
-#include "esp_partition.h"
 #include "esp_system.h"
 #include "esp_vfs_fat.h"
 #include "firmware.h"
@@ -53,7 +51,6 @@ bool staged_present[model::kMaxTasks] = {};
 int staged_count = 0;
 uint32_t staged_started_ms = 0;
 constexpr uint32_t kStagedBatchTimeoutMs = 2000;
-bool exit_armed = false;
 bool ble_reset_armed = false;
 struct VoiceGesture {
     bool active = false;
@@ -438,42 +435,6 @@ void commit_tasks(int selected_hint)
     ui::invalidate();
 }
 
-void enable_m5apps_autostart()
-{
-    nvs_handle_t handle = 0;
-    const char* partition = storage_partition::nvs_label();
-    esp_err_t err = partition
-        ? nvs_open_from_partition(partition, "system", NVS_READWRITE, &handle)
-        : ESP_ERR_NOT_FOUND;
-    if (err == ESP_OK)
-        err = nvs_set_u8(handle, "last_app", 1);
-    if (err == ESP_OK)
-        err = nvs_set_i32(handle, "last_app_to", 2);
-    if (err == ESP_OK)
-        err = nvs_commit(handle);
-    if (handle)
-        nvs_close(handle);
-    hostlink::emit("m5apps_autostart", err == ESP_OK, esp_err_to_name(err));
-}
-
-void return_to_m5apps()
-{
-    const esp_partition_t* factory = esp_partition_find_first(
-        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, nullptr);
-    if (!factory) {
-        hostlink::emit("return_to_m5apps", false, "factory_not_found");
-        return;
-    }
-    const esp_err_t err = esp_ota_set_boot_partition(factory);
-    hostlink::emit("return_to_m5apps", err == ESP_OK, esp_err_to_name(err));
-    if (err == ESP_OK) {
-        // Settings changed within the write debounce would otherwise be lost.
-        store::flush();
-        vTaskDelay(pdMS_TO_TICKS(120));
-        esp_restart();
-    }
-}
-
 void send_screenshot(const char* scene)
 {
     const uint16_t* pixels = ui::capture_frame(scene);
@@ -777,9 +738,8 @@ void handle_press(const Press& press)
             audio::play(audio::Cue::Select);
             break;
         }
-        // Back never leaves the app. Handing the device back to M5Apps is a
-        // deliberate action from Settings, because it costs a reboot and
-        // makes the companion unreachable until the user returns to it.
+        // Back closes local surfaces but never leaves the application. The
+        // physical Reset button returns a multiboot installation to crub.
         ui::go((ui::screen() == ui::Screen::StatusDebug || ui::screen() == ui::Screen::ChimeLab)
                    ? ui::Screen::DebugSettings
                    : ui::Screen::Deck);
@@ -814,21 +774,12 @@ void handle_press(const Press& press)
             (press.key == Key::Left || press.key == Key::Right))
             adjust_volume(press.key == Key::Right ? 1 : -1);
         if (press.key == Key::Enter) {
-            if (ui::settings_focus() == ui::SettingsRow::Exit) {
-                if (exit_armed) {
-                    return_to_m5apps();
-                } else {
-                    exit_armed = true;
-                    ui::toast("EXIT TO M5APPS?", "Press enter again", theme::kInput);
-                }
-            } else if (ui::settings_focus() == ui::SettingsRow::Volume) {
+            if (ui::settings_focus() == ui::SettingsRow::Volume) {
                 adjust_volume(1);
             } else if (ui::settings_focus() == ui::SettingsRow::StartupSound) {
                 toggle_startup_sound();
             }
         }
-        if (press.key != Key::Enter)
-            exit_armed = false;
         break;
 
     case ui::Screen::DebugSettings:
@@ -954,10 +905,6 @@ void handle_line(char* line)
     }
     if (std::strncmp(line, "SCREENSHOT|", 11) == 0) {
         send_screenshot(line + 11);
-        return;
-    }
-    if (std::strcmp(line, "AUTOSTART") == 0) {
-        enable_m5apps_autostart();
         return;
     }
     // A live Codex Micro session owns the deck and Auto-dim. The leftover USB
