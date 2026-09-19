@@ -1,10 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.12.1 — 2026-09-19
 
 - Documented isolated local builds through Cardputer Firmware Manager so Codex
   keeps using its pinned ESP-IDF 5.5.3 toolchain beside Hub 5.5.5.
 - Made the USB installer target CRUB's lowercase `codex` partition by default.
+- Follow Codex chat switches on the Cardputer and Puzzle Unit cursors. Infer
+  selection from the native Micro cues, including a unique white blink,
+  `sk=1`, breath/shallowBreath, a newly blinking slot, and the sole
+  green-to-white viewed edge. Live task snapshots are no longer swallowed by
+  a leftover dial/preview guard, and host selection now moves the visible UI.
+- Let Tab open Host Channel from the offline splash even when the same press
+  first wakes a dimmed or dark display.
+- Keep the first post-handshake six-slot deck inside a one-second restore
+  window and clear per-task `seen` state at session start, preventing a first
+  Codex connection from replaying status animations for every restored slot.
 
 ## 0.12.0 — 2026-09-11
 
