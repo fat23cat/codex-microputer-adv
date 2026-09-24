@@ -12,7 +12,7 @@
 
 ## Нативное подключение к Codex
 
-1. Запустить Codex Microputer ADV из `crub` командой `extra`.
+1. Запустить Codex Microputer ADV из `crub` командой `go`.
 2. Подключить `Codex Micro ADV` в Bluetooth macOS один раз.
 3. Codex обнаруживает HID-устройство без отдельного bridge и выполняет
    `v.oai.rgbcfg`, `v.oai.thstatus`, `device.status`.
@@ -279,7 +279,7 @@
 
 Ожидаемый результат: образ записан только в общий раздел `extra` и заменяет
 приложение, которое там было; `hub`, `apps_nvs` и данные других приложений не
-изменены. `extra` (`launch -f extra`) перезапускает устройство в Codex
+изменены. `go` (`launch -f extra`) перезапускает устройство в Codex
 Microputer. После запуска host получает
 `device.status`, `v.oai.thstatus` и `v.oai.rgbcfg`.
 
@@ -287,7 +287,7 @@ Microputer. После запуска host получает
   `0x2d0000` в общей таблице `crub`.
 - После запуска на физическом Cardputer ADV необходимо проверить команды
   `v.oai.rgbcfg`, `v.oai.thstatus`, `device.status` и ответы без timeout.
-- Аппаратный reset должен открыть `crub`; после повторного `extra`
+- Аппаратный reset должен открыть `crub`; после повторного `go`
   необходимо проверить автоматическое BLE-подключение без повторного pairing.
 
 ## Сон при переключении

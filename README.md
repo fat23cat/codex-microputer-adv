@@ -85,7 +85,7 @@ update may require corresponding firmware changes.
 3. Safely eject the card, exit `usbsd`, and run `sd` so `crub` remounts the
    card and reloads the staged aliases.
 4. Run `upcodex` and wait for `flash complete`.
-5. Run `extra`.
+5. Run `go`.
 6. On the computer, open Codex and connect the detected `Codex Micro ADV`
    device over USB or Bluetooth.
 
@@ -157,9 +157,9 @@ source tools/env.sh
 The installer auto-detects `/dev/cu.usbmodem*`, verifies that the staged image
 matches the current build, writes only the existing `extra` OTA partition,
 replacing whichever application it held, checks the flash digest, and resets
-into the `crub` launcher. Run `extra` there to start the updated application. Creating or resizing a partition
-requires the explicit `--create-partition` flag because that operation edits
-the partition table.
+into the `crub` launcher. Run `go` there to start the updated application.
+Creating or resizing a partition requires the explicit `--create-partition`
+flag because that operation edits the partition table.
 
 ## Controls
 
