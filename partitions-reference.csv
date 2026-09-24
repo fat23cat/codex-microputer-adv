@@ -1,10 +1,11 @@
 # Build-time subset of the shared crub layout. It retains the exact Codex app
 # and persistence addresses needed for size validation, but is never a
 # deployable device table. The loader owns the full table; Cardputer Firmware
-# Manager owns its source at layouts/cardputer-adv-8mb.csv.
+# Manager owns its source at layouts/cardputer-adv-8mb.csv. Codex runs from the
+# shared `extra` slot, which holds one application at a time.
 # Name, Type, SubType, Offset, Size, Flags
 nvs,data,nvs,0x9000,0x5000,
 otadata,data,ota,0xe000,0x2000,
-codex,app,ota_1,0x350000,0x200000,
-apps_nvs,data,nvs,0x550000,0x10000,
-hub_config,data,nvs,0x560000,0x10000,
+extra,app,ota_1,0x2d0000,0x4c0000,
+apps_nvs,data,nvs,0x790000,0x10000,
+hub_config,data,nvs,0x7a0000,0x10000,

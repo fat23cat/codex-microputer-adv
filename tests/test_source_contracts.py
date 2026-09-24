@@ -594,9 +594,11 @@ require("main/storage_partition.h",
         r"ESP_PARTITION_SUBTYPE_DATA_NVS,\s*\"apps_nvs\"[\s\S]{0,220}"
         r"ESP_PARTITION_SUBTYPE_DATA_NVS,\s*nullptr",
         "storage must prefer the loader-owned apps_nvs label and fall back by stable NVS subtype")
-require("partitions-reference.csv", r"^codex,app,ota_1,0x350000,0x200000,",
-        "the build-time image check must use the shared crub codex slot")
-require("partitions-reference.csv", r"^apps_nvs,data,nvs,0x550000,0x10000,",
+require("partitions-reference.csv", r"^extra,app,ota_1,0x2d0000,0x4c0000,",
+        "the build-time image check must use the shared crub extra slot")
+forbid("partitions-reference.csv", r"^codex,",
+       "the dedicated crub codex partition no longer exists")
+require("partitions-reference.csv", r"^apps_nvs,data,nvs,0x790000,0x10000,",
         "Codex settings and BLE bonds must have a dedicated crub NVS partition")
 require("main/ble_store_apps_nvs.cpp", r"storage_partition::nvs_label\(\)",
         "BLE bonds must use the same runtime-discovered NVS partition as settings")

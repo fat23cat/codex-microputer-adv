@@ -9,8 +9,8 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 
-# Reference subset only, so the app-size check validates against the 2 MiB
-# `codex` slot in the shared crub layout. The loader owns the full partition
+# Reference subset only, so the app-size check validates against the 4.75 MiB
+# shared `extra` slot in the crub layout. The loader owns the full partition
 # table on the device and this generated subset is never flashed.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-reference.csv"

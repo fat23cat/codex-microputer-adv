@@ -85,7 +85,7 @@ update may require corresponding firmware changes.
 3. Safely eject the card, exit `usbsd`, and run `sd` so `crub` remounts the
    card and reloads the staged aliases.
 4. Run `upcodex` and wait for `flash complete`.
-5. Run `codex`.
+5. Run `extra`.
 6. On the computer, open Codex and connect the detected `Codex Micro ADV`
    device over USB or Bluetooth.
 
@@ -100,9 +100,14 @@ python3 -m firmware_manager local --app codex --sd /Volumes/CARDPUTER
 
 Safely eject the card, exit `usbsd`, and run `sd` before `upcodex`.
 
-The manager validates the raw ESP application descriptor, enforces the 2 MiB
-`codex` partition limit, updates checksums and aliases, and preserves the Hub
+The manager validates the raw ESP application descriptor, enforces the 4.75 MiB
+`extra` partition limit, updates checksums and aliases, and preserves the Hub
 image. Do not copy or flash an unvalidated `Codex.bin` directly.
+
+Codex runs from the shared `extra` slot, which holds one application at a time.
+Flashing another application there, such as Bruce with `upbruce`, replaces
+Codex; run `upcodex` again to return. Codex settings and BLE bonds live in
+`apps_nvs`, outside the slot, and survive the switch.
 
 Do not flash `Codex.bin` at address `0x0`: it is an application image, not a
 complete device image. `crub` owns the bootloader and shared partition table.
@@ -141,7 +146,7 @@ If ESP-IDF and the M5Stack dependencies are already installed elsewhere, set
 
 ## Install over USB during development
 
-After the shared layout has created the lowercase `codex` app partition once:
+After the shared layout has created the `extra` app partition once:
 
 ```bash
 source tools/env.sh
@@ -150,9 +155,9 @@ source tools/env.sh
 ```
 
 The installer auto-detects `/dev/cu.usbmodem*`, verifies that the staged image
-matches the current build, writes only the existing `codex` OTA partition,
-checks the flash digest, and resets into the `crub` launcher. Run `launch -f
-codex` there to start the updated application. Creating or resizing a partition
+matches the current build, writes only the existing `extra` OTA partition,
+replacing whichever application it held, checks the flash digest, and resets
+into the `crub` launcher. Run `extra` there to start the updated application. Creating or resizing a partition
 requires the explicit `--create-partition` flag because that operation edits
 the partition table.
 
