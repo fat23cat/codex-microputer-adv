@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Moved Codex into the shared 4.75 MiB CRUB `extra` slot at `0x2d0000`, which
+  holds one application at a time and is launched with CRUB's `go` alias. The
+  build-time layout reference, the USB installer's default partition, and the
+  documentation now use `extra`; `apps_nvs` moved to `0x790000` and still
+  preserves settings and BLE bonds. Devices on the earlier layout follow
+  Cardputer Firmware Manager's one-time migration.
+
 ## 0.12.1 — 2026-09-19
 
 - Documented isolated local builds through Cardputer Firmware Manager so Codex

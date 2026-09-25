@@ -30,10 +30,10 @@ def main():
  assert len(calls)==3
  calls.clear()
  with mock.patch.object(m,"esptool",side_effect=lambda *args,**kwargs:calls.append(args)):
-  m.verify_image("port",{"offset":0x350000},m.Path("Codex.bin"))
+  m.verify_image("port",{"offset":0x2D0000},m.Path("Codex.bin"))
  assert "--after" in calls[0]
  assert calls[0][calls[0].index("--after")+1]=="hard_reset"
- assert m.resolve_partition_label(None)=="codex"
+ assert m.resolve_partition_label(None)=="extra"
  assert m.resolve_partition_label("alternate")=="alternate"
  print("PASS install_tool")
 if __name__=="__main__":main()

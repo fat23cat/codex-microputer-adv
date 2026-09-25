@@ -19,7 +19,7 @@ HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
 DEFAULT_IMAGE = PROJECT / "dist" / "Codex.bin"
 BUILD_IMAGE = PROJECT / "build" / "codex_microputer_adv.bin"
-DEFAULT_PARTITION_LABEL = "codex"
+DEFAULT_PARTITION_LABEL = "extra"
 SUBTYPE_NAMES = {
     (TYPE_DATA, 1): "phy",
     (TYPE_DATA, 2): "nvs",

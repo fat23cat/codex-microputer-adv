@@ -17,4 +17,4 @@ mkdir -p dist
 cp build/codex_microputer_adv.bin dist/Codex.bin
 
 printf '\ndist/Codex.bin  %s bytes\n' "$(wc -c < dist/Codex.bin | tr -d ' ')"
-printf 'Copy it to /firmware/Codex.bin and install with crub: flash /firmware/Codex.bin codex\n'
+printf 'Stage it with Cardputer Firmware Manager, then run upcodex in crub (flash /firmware/Codex.bin extra)\n'

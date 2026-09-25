@@ -12,7 +12,7 @@
 
 ## Нативное подключение к Codex
 
-1. Запустить Codex Microputer ADV из `crub` командой `launch -f codex`.
+1. Запустить Codex Microputer ADV из `crub` командой `go`.
 2. Подключить `Codex Micro ADV` в Bluetooth macOS один раз.
 3. Codex обнаруживает HID-устройство без отдельного bridge и выполняет
    `v.oai.rgbcfg`, `v.oai.thstatus`, `device.status`.
@@ -275,18 +275,19 @@
 
 Действие: собрать прошивку, скопировать `dist/Codex.bin` в
 `/firmware/Codex.bin` на microSD и выполнить в `crub`
-`flash /firmware/Codex.bin codex`.
+`upcodex` (`flash /firmware/Codex.bin extra`).
 
-Ожидаемый результат: образ записан только в существующий раздел `codex`, а `apps_nvs` и
-данные других приложений не изменены. `launch -f codex` перезапускает устройство
-в Codex Microputer. После запуска host получает
+Ожидаемый результат: образ записан только в общий раздел `extra` и заменяет
+приложение, которое там было; `hub`, `apps_nvs` и данные других приложений не
+изменены. `go` (`launch -f extra`) перезапускает устройство в Codex
+Microputer. После запуска host получает
 `device.status`, `v.oai.thstatus` и `v.oai.rgbcfg`.
 
-- Размер образа проверен относительно 2-МиБ раздела `codex` по адресу
-  `0x350000` в общей таблице `crub`.
+- Размер образа проверен относительно 4,75-МиБ раздела `extra` по адресу
+  `0x2d0000` в общей таблице `crub`.
 - После запуска на физическом Cardputer ADV необходимо проверить команды
   `v.oai.rgbcfg`, `v.oai.thstatus`, `device.status` и ответы без timeout.
-- Аппаратный reset должен открыть `crub`; после повторного `launch -f codex`
+- Аппаратный reset должен открыть `crub`; после повторного `go`
   необходимо проверить автоматическое BLE-подключение без повторного pairing.
 
 ## Сон при переключении
