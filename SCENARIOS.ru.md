@@ -283,7 +283,7 @@
 Microputer. После запуска host получает
 `device.status`, `v.oai.thstatus` и `v.oai.rgbcfg`.
 
-- Размер образа проверен относительно 4,75-МиБ раздела `extra` по адресу
+- Размер образа проверен относительно 4,5-МиБ раздела `extra` по адресу
   `0x2d0000` в общей таблице `crub`.
 - После запуска на физическом Cardputer ADV необходимо проверить команды
   `v.oai.rgbcfg`, `v.oai.thstatus`, `device.status` и ответы без timeout.
