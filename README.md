@@ -100,7 +100,7 @@ python3 -m firmware_manager local --app codex --sd /Volumes/CARDPUTER
 
 Safely eject the card, exit `usbsd`, and run `sd` before `upcodex`.
 
-The manager validates the raw ESP application descriptor, enforces the 4.75 MiB
+The manager validates the raw ESP application descriptor, enforces the 4.5 MiB
 `extra` partition limit, updates checksums and aliases, and preserves the Hub
 image. Do not copy or flash an unvalidated `Codex.bin` directly.
 

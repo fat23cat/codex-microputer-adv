@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Moved Codex into the shared 4.75 MiB CRUB `extra` slot at `0x2d0000`, which
+- Moved Codex into the shared 4.5 MiB CRUB `extra` slot at `0x2d0000`, which
   holds one application at a time and is launched with CRUB's `go` alias. The
   build-time layout reference, the USB installer's default partition, and the
   documentation now use `extra`; `apps_nvs` moved to `0x790000` and still
