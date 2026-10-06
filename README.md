@@ -113,6 +113,28 @@ Do not flash `Codex.bin` at address `0x0`: it is an application image, not a
 complete device image. `crub` owns the bootloader and shared partition table.
 Use the physical Reset button to return to the `crub` launcher.
 
+## Short development commands
+
+With dependencies installed and the sibling `cardputer-firmware-manager`
+checkout present, run:
+
+```bash
+make               # help
+make build         # pinned toolchain, no SD needed
+make check         # host tests, public-tree audit, production build
+make flash         # build and prepare SD through manager
+make stage         # prepare SD using the existing image
+make doctor        # validate mounted SD
+```
+
+`flash` defaults to `SD=/Volumes/CARDPUTER`; override it with, for example,
+`make flash SD="/Volumes/My Card"`. `FIRMWARE_MANAGER_DIR` selects the manager
+checkout and `WORKSPACE` selects the parent of the firmware repositories.
+The manager isolates the Codex build from inherited ESP-IDF variables.
+After staging, safely eject the card, exit CRUB `usbsd`, and run `sd`, `upcodex`,
+and `go`. `make -n flash` previews the workflow. Make and Python are sufficient;
+Node.js and npm are not required.
+
 ## Build from source
 
 The setup script installs pinned, project-local dependencies under `.deps/`:
